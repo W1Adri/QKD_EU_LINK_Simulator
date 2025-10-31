@@ -1,0 +1,15 @@
+{
+  // Usa el nuevo depurador 'debugpy' y lanza siempre run_app.py con F5.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run QKD Planner (Uvicorn)", // nombre visible
+      "type": "debugpy",                   // depurador Python moderno
+      "request": "launch",                 // lanza script
+      "program": "${workspaceFolder}/run_app.py", // qué script ejecutar
+      "console": "internalConsole",        // salida en consola de debug
+      "cwd": "${workspaceFolder}",         // carpeta de trabajo
+      "justMyCode": true                   // ignora libs externas
+    }
+  ]
+}

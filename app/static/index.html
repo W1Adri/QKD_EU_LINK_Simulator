@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QKD Europe Planner</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div id="map"></div>
+
+  <div id="panel">
+    <header class="panel-header">
+      <h1>QKD Europe Planner (2D)</h1>
+      <span id="activeOrbit">sat-leo</span>
+      <button id="panelToggle" aria-expanded="true" aria-controls="panelBody">Collapse</button>
+    </header>
+
+    <div id="panelBody">
+    <section class="section">
+      <div class="field">
+        <label for="satName">Satellite name</label>
+        <input id="satName" value="sat-leo" />
+      </div>
+      <div class="field">
+        <label for="epoch">Epoch (UTC)</label>
+        <input id="epoch" type="datetime-local" />
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Orbital parameters</h2>
+      <div class="param">
+        <label for="a">Semi-major axis a (km)</label>
+        <div class="controls">
+          <input id="a" type="number" step="1" value="6771" />
+          <input id="aSlider" type="range" />
+        </div>
+      </div>
+      <div class="param">
+        <label for="e">Eccentricity e</label>
+        <div class="controls">
+          <input id="e" type="number" step="0.001" value="0.001" />
+          <input id="eSlider" type="range" />
+        </div>
+      </div>
+      <div class="param">
+        <label for="i">Inclination i (deg)</label>
+        <div class="controls">
+          <input id="i" type="number" step="0.1" value="53.0" />
+          <input id="iSlider" type="range" />
+        </div>
+      </div>
+      <div class="param">
+        <label for="raan">RAAN Ω (deg)</label>
+        <div class="controls">
+          <input id="raan" type="number" step="0.1" value="0.0" />
+          <input id="raanSlider" type="range" />
+        </div>
+      </div>
+      <div class="param">
+        <label for="argp">Argument of perigee ω (deg)</label>
+        <div class="controls">
+          <input id="argp" type="number" step="0.1" value="0.0" />
+          <input id="argpSlider" type="range" />
+        </div>
+      </div>
+      <div class="param">
+        <label for="M0">Mean anomaly M₀ (deg)</label>
+        <div class="controls">
+          <input id="M0" type="number" step="0.1" value="0.0" />
+          <input id="M0Slider" type="range" />
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Satellite</h2>
+      <div class="param">
+        <label for="aperture">Telescope aperture (m)</label>
+        <div class="controls">
+          <input id="aperture" type="number" step="0.1" value="1.0" />
+          <input id="apertureSlider" type="range" />
+        </div>
+      </div>
+      <div class="actions">
+        <button id="btnSaveOrbit">Save orbits</button>
+        <button id="btnImportOrbit">Import orbit</button>
+        <button id="btnClearOrbits">Clear saved</button>
+        <button id="btnOpen3D">Open 3D</button>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Time controls</h2>
+      <div class="time-controls">
+        <button id="btnPlay">▶</button>
+        <button id="btnPause">⏸</button>
+        <button id="btnStepBack">⏪</button>
+        <button id="btnStepForward">⏩</button>
+        <button id="btnResetTime">↺</button>
+        <label for="speed">Speed</label>
+        <select id="speed">
+          <option value="1">x1</option>
+          <option value="5">x5</option>
+          <option value="10">x10</option>
+          <option value="50">x50</option>
+          <option value="100" selected>x100</option>
+          <option value="500">x500</option>
+          <option value="1000">x1000</option>
+        </select>
+      </div>
+      <div class="scrubber">
+        <input id="timeSlider" type="range" min="0" max="5400" step="1" value="0" />
+        <div class="time-readout">
+          <span>t = <span id="timeDisplay">0.0</span> s</span>
+          <span>/ <span id="timeMaxDisplay">--</span></span>
+        </div>
+      </div>
+      <div class="row compact">
+        <label for="revSelect">Display interval</label>
+        <select id="revSelect">
+          <option value="1">1 revolution</option>
+          <option value="2">2 rev.</option>
+          <option value="3">3 rev.</option>
+          <option value="5">5 rev.</option>
+          <option value="10">10 rev.</option>
+          <option value="repeat">Until repeat ground-track</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Ground-track repetition</h2>
+      <label class="checkbox">
+        <input id="chkCloseTrack" type="checkbox" />
+        Close track (resonant orbit)
+      </label>
+      <div id="resonanceControls" class="hidden">
+        <div class="row compact">
+          <label for="resLock">Lock</label>
+          <select id="resLock">
+            <option value="orbits">Fix N orbits</option>
+            <option value="rotations">Fix N rotations</option>
+          </select>
+        </div>
+        <div class="row compact">
+          <label for="resOrbits">N orbits</label>
+          <input id="resOrbits" type="number" min="1" max="30" step="1" value="1" />
+        </div>
+        <div class="row compact">
+          <label for="resRotations">N rotations</label>
+          <input id="resRotations" type="number" min="1" max="30" step="1" value="1" />
+        </div>
+        <div id="resFeedback">Choose small integers (≤30) for closed ground-track solutions.</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Optical ground stations</h2>
+      <div class="param">
+        <label for="ogsAperture">OGS aperture (m)</label>
+        <div class="controls">
+          <input id="ogsAperture" type="number" step="0.1" value="1.0" />
+          <input id="ogsApertureSlider" type="range" min="0.1" max="10" step="0.1" value="1.0" />
+        </div>
+      </div>
+      <div class="actions">
+        <button id="btnCreateOGS">Create OGS mode</button>
+        <button id="btnClearOGS">Clear OGS</button>
+      </div>
+    </section>
+
+    <section class="section stats">
+      <div class="stat">
+        <span class="label">Period</span>
+        <span class="value" id="statPeriod">--</span>
+      </div>
+      <div class="stat">
+        <span class="label">Trep</span>
+        <span class="value" id="statTRep">--</span>
+      </div>
+      <div class="stat">
+        <span class="label">Perigee</span>
+        <span class="value" id="statPerigee">--</span>
+      </div>
+      <div class="stat">
+        <span class="label">Apogee</span>
+        <span class="value" id="statApogee">--</span>
+      </div>
+      <div class="stat">
+        <span class="label">Speed</span>
+        <span class="value" id="statSpeed">--</span>
+      </div>
+      <div class="stat">
+        <span class="label">Satellite aperture</span>
+        <span class="value" id="statAperture">--</span>
+      </div>
+      <div class="stat">
+        <span class="label">Resonance error</span>
+        <span class="value" id="statResError">--</span>
+      </div>
+      <div class="stat">
+        <span class="label">Active OGS</span>
+        <span class="value" id="statOGS">--</span>
+      </div>
+    </section>
+    </div>
+  </div>
+
+  <div id="boot-msg">Loading map...</div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
