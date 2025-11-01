@@ -2,54 +2,58 @@ import { DEG2RAD, clamp } from './utils.js';
 
 const EARTH_RADIUS_UNITS = 1;
 const ALT_SCALE = 1 / 4000;
+const MIN_RADIUS = 1.6;
+const MAX_RADIUS = 7.5;
+const ROTATION_SPEED = 0.015; // radians per second
 
 let containerRef;
 let canvas;
 let gl;
-let animationId;
-let resizeObserver;
-let windowResizeHandler;
+let fallbackEl;
+let animationId = null;
+let resizeObserver = null;
+let windowResizeHandler = null;
+let ready = false;
 
-let sphereProgram;
-let lineProgram;
-let pointProgram;
+let sphereProgram = null;
+let lineProgram = null;
+let pointProgram = null;
 
 let sphereBuffers = null;
 let orbitBuffer = null;
 let linkBuffer = null;
-let linkVisible = false;
 let satelliteBuffer = null;
 let stationBuffer = null;
-
-let sphereTexture = null;
-let pixelRatio = 1;
-
-let ready = false;
-let showFallback;
+let earthTexture = null;
 
 let cameraRadius = 3.2;
 let rotationX = 0.6;
-let rotationY = 0.8;
+let rotationY = 0.9;
 let earthRotation = 0;
-const MIN_RADIUS = 1.6;
-const MAX_RADIUS = 8.0;
+let lastFrameTime = 0;
+let linkVisible = false;
+let currentTheme = 'dark';
+
+const pointerState = {
+  active: false,
+  x: 0,
+  y: 0,
+  startRotX: 0,
+  startRotY: 0,
+};
 
 const projectionMatrix = new Float32Array(16);
 const viewMatrix = new Float32Array(16);
-const viewProjectionMatrix = new Float32Array(16);
 const modelMatrix = new Float32Array(16);
 const modelViewMatrix = new Float32Array(16);
 const normalMatrix = new Float32Array(9);
 
 const satelliteData = new Float32Array(7);
-const stationsData = [];
-const linkData = new Float32Array(6);
-
-const themeColors = {
-  dark: [0.0078, 0.012, 0.15, 1],
-  light: [0.941, 0.956, 0.986, 1],
+const stationData = {
+  array: new Float32Array(0),
+  count: 0,
 };
-let currentTheme = 'dark';
+const linkData = new Float32Array(6);
 
 function latLonToVector(latDeg, lonDeg, altKm = 0) {
   const lat = latDeg * DEG2RAD;
@@ -61,6 +65,185 @@ function latLonToVector(latDeg, lonDeg, altKm = 0) {
     radius * Math.sin(lat),
     radius * cosLat * Math.sin(lon),
   ];
+}
+
+function clampRotationX(value) {
+  return clamp(value, 0.1, Math.PI - 0.1);
+}
+
+function mat4Identity(out) {
+  out[0] = 1; out[1] = 0; out[2] = 0; out[3] = 0;
+  out[4] = 0; out[5] = 1; out[6] = 0; out[7] = 0;
+  out[8] = 0; out[9] = 0; out[10] = 1; out[11] = 0;
+  out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
+  return out;
+}
+
+function mat4Multiply(out, a, b) {
+  const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
+  const a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+  const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
+  const a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+
+  const b00 = b[0], b01 = b[1], b02 = b[2], b03 = b[3];
+  const b10 = b[4], b11 = b[5], b12 = b[6], b13 = b[7];
+  const b20 = b[8], b21 = b[9], b22 = b[10], b23 = b[11];
+  const b30 = b[12], b31 = b[13], b32 = b[14], b33 = b[15];
+
+  out[0] = a00 * b00 + a01 * b10 + a02 * b20 + a03 * b30;
+  out[1] = a00 * b01 + a01 * b11 + a02 * b21 + a03 * b31;
+  out[2] = a00 * b02 + a01 * b12 + a02 * b22 + a03 * b32;
+  out[3] = a00 * b03 + a01 * b13 + a02 * b23 + a03 * b33;
+  out[4] = a10 * b00 + a11 * b10 + a12 * b20 + a13 * b30;
+  out[5] = a10 * b01 + a11 * b11 + a12 * b21 + a13 * b31;
+  out[6] = a10 * b02 + a11 * b12 + a12 * b22 + a13 * b32;
+  out[7] = a10 * b03 + a11 * b13 + a12 * b23 + a13 * b33;
+  out[8] = a20 * b00 + a21 * b10 + a22 * b20 + a23 * b30;
+  out[9] = a20 * b01 + a21 * b11 + a22 * b21 + a23 * b31;
+  out[10] = a20 * b02 + a21 * b12 + a22 * b22 + a23 * b32;
+  out[11] = a20 * b03 + a21 * b13 + a22 * b23 + a23 * b33;
+  out[12] = a30 * b00 + a31 * b10 + a32 * b20 + a33 * b30;
+  out[13] = a30 * b01 + a31 * b11 + a32 * b21 + a33 * b31;
+  out[14] = a30 * b02 + a31 * b12 + a32 * b22 + a33 * b32;
+  out[15] = a30 * b03 + a31 * b13 + a32 * b23 + a33 * b33;
+  return out;
+}
+
+function mat4Perspective(out, fov, aspect, near, far) {
+  const f = 1.0 / Math.tan(fov / 2);
+  const nf = 1 / (near - far);
+  out[0] = f / aspect;
+  out[1] = 0;
+  out[2] = 0;
+  out[3] = 0;
+  out[4] = 0;
+  out[5] = f;
+  out[6] = 0;
+  out[7] = 0;
+  out[8] = 0;
+  out[9] = 0;
+  out[10] = (far + near) * nf;
+  out[11] = -1;
+  out[12] = 0;
+  out[13] = 0;
+  out[14] = 2 * far * near * nf;
+  out[15] = 0;
+  return out;
+}
+
+function mat4LookAt(out, eye, target, up) {
+  const x0 = eye[0], x1 = eye[1], x2 = eye[2];
+  const y0 = up[0], y1 = up[1], y2 = up[2];
+  const z0 = target[0], z1 = target[1], z2 = target[2];
+
+  let zx = x0 - z0;
+  let zy = x1 - z1;
+  let zz = x2 - z2;
+  let len = Math.hypot(zx, zy, zz);
+  if (len === 0) {
+    zz = 1;
+    len = 1;
+  }
+  zx /= len;
+  zy /= len;
+  zz /= len;
+
+  let xx = y1 * zz - y2 * zy;
+  let xy = y2 * zx - y0 * zz;
+  let xz = y0 * zy - y1 * zx;
+  len = Math.hypot(xx, xy, xz);
+  if (!len) {
+    xx = 0;
+    xy = 0;
+    xz = 0;
+  } else {
+    xx /= len;
+    xy /= len;
+    xz /= len;
+  }
+
+  let yx = zy * xz - zz * xy;
+  let yy = zz * xx - zx * xz;
+  let yz = zx * xy - zy * xx;
+  len = Math.hypot(yx, yy, yz);
+  if (!len) {
+    yx = 0;
+    yy = 0;
+    yz = 0;
+  } else {
+    yx /= len;
+    yy /= len;
+    yz /= len;
+  }
+
+  out[0] = xx;
+  out[1] = yx;
+  out[2] = zx;
+  out[3] = 0;
+  out[4] = xy;
+  out[5] = yy;
+  out[6] = zy;
+  out[7] = 0;
+  out[8] = xz;
+  out[9] = yz;
+  out[10] = zz;
+  out[11] = 0;
+  out[12] = -(xx * x0 + xy * x1 + xz * x2);
+  out[13] = -(yx * x0 + yy * x1 + yz * x2);
+  out[14] = -(zx * x0 + zy * x1 + zz * x2);
+  out[15] = 1;
+  return out;
+}
+
+function mat4RotateY(out, rad) {
+  const c = Math.cos(rad);
+  const s = Math.sin(rad);
+  out[0] = c; out[1] = 0; out[2] = -s; out[3] = 0;
+  out[4] = 0; out[5] = 1; out[6] = 0; out[7] = 0;
+  out[8] = s; out[9] = 0; out[10] = c; out[11] = 0;
+  out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
+  return out;
+}
+
+function mat3FromMat4(out, mat) {
+  out[0] = mat[0]; out[1] = mat[1]; out[2] = mat[2];
+  out[3] = mat[4]; out[4] = mat[5]; out[5] = mat[6];
+  out[6] = mat[8]; out[7] = mat[9]; out[8] = mat[10];
+  return out;
+}
+
+function mat3InvertTranspose(out, mat) {
+  const a00 = mat[0], a01 = mat[1], a02 = mat[2];
+  const a10 = mat[3], a11 = mat[4], a12 = mat[5];
+  const a20 = mat[6], a21 = mat[7], a22 = mat[8];
+
+  const b01 = a22 * a11 - a12 * a21;
+  const b11 = -a22 * a10 + a12 * a20;
+  const b21 = a21 * a10 - a11 * a20;
+
+  let det = a00 * b01 + a01 * b11 + a02 * b21;
+  if (!det) {
+    return mat3Identity(out);
+  }
+  det = 1.0 / det;
+
+  out[0] = b01 * det;
+  out[1] = (-a22 * a01 + a02 * a21) * det;
+  out[2] = (a12 * a01 - a02 * a11) * det;
+  out[3] = b11 * det;
+  out[4] = (a22 * a00 - a02 * a20) * det;
+  out[5] = (-a12 * a00 + a02 * a10) * det;
+  out[6] = b21 * det;
+  out[7] = (-a21 * a00 + a01 * a20) * det;
+  out[8] = (a11 * a00 - a01 * a10) * det;
+  return out;
+}
+
+function mat3Identity(out) {
+  out[0] = 1; out[1] = 0; out[2] = 0;
+  out[3] = 0; out[4] = 1; out[5] = 0;
+  out[6] = 0; out[7] = 0; out[8] = 1;
+  return out;
 }
 
 function createSphereGeometry(segments = 96, rings = 64) {
@@ -92,7 +275,7 @@ function createSphereGeometry(segments = 96, rings = 64) {
   }
 
   for (let y = 0; y < rings; y++) {
-    for (let x = 0; x <= segments; x++) {
+    for (let x = 0; x < segments; x++) {
       const first = y * (segments + 1) + x;
       const second = first + segments + 1;
       indices.push(first, second, first + 1);
@@ -104,7 +287,7 @@ function createSphereGeometry(segments = 96, rings = 64) {
     vertices: new Float32Array(vertices),
     normals: new Float32Array(normals),
     uvs: new Float32Array(uvs),
-    indices: new Uint32Array(indices),
+    indices: new Uint16Array(indices),
   };
 }
 
@@ -137,740 +320,557 @@ function createProgram(vertexSrc, fragmentSrc) {
   return program;
 }
 
-function mat4Identity(out) {
-  out[0] = 1; out[1] = 0; out[2] = 0; out[3] = 0;
-  out[4] = 0; out[5] = 1; out[6] = 0; out[7] = 0;
-  out[8] = 0; out[9] = 0; out[10] = 1; out[11] = 0;
-  out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
-  return out;
-}
-
-function mat4Multiply(out, a, b) {
-  const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
-  const a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
-  const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
-  const a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
-
-  const b00 = b[0], b01 = b[1], b02 = b[2], b03 = b[3];
-  const b10 = b[4], b11 = b[5], b12 = b[6], b13 = b[7];
-  const b20 = b[8], b21 = b[9], b22 = b[10], b23 = b[11];
-  const b30 = b[12], b31 = b[13], b32 = b[14], b33 = b[15];
-
-  out[0] = b00 * a00 + b01 * a10 + b02 * a20 + b03 * a30;
-  out[1] = b00 * a01 + b01 * a11 + b02 * a21 + b03 * a31;
-  out[2] = b00 * a02 + b01 * a12 + b02 * a22 + b03 * a32;
-  out[3] = b00 * a03 + b01 * a13 + b02 * a23 + b03 * a33;
-  out[4] = b10 * a00 + b11 * a10 + b12 * a20 + b13 * a30;
-  out[5] = b10 * a01 + b11 * a11 + b12 * a21 + b13 * a31;
-  out[6] = b10 * a02 + b11 * a12 + b12 * a22 + b13 * a32;
-  out[7] = b10 * a03 + b11 * a13 + b12 * a23 + b13 * a33;
-  out[8] = b20 * a00 + b21 * a10 + b22 * a20 + b23 * a30;
-  out[9] = b20 * a01 + b21 * a11 + b22 * a21 + b23 * a31;
-  out[10] = b20 * a02 + b21 * a12 + b22 * a22 + b23 * a32;
-  out[11] = b20 * a03 + b21 * a13 + b22 * a23 + b23 * a33;
-  out[12] = b30 * a00 + b31 * a10 + b32 * a20 + b33 * a30;
-  out[13] = b30 * a01 + b31 * a11 + b32 * a21 + b33 * a31;
-  out[14] = b30 * a02 + b31 * a12 + b32 * a22 + b33 * a32;
-  out[15] = b30 * a03 + b31 * a13 + b32 * a23 + b33 * a33;
-  return out;
-}
-
-function mat4Perspective(out, fovy, aspect, near, far) {
-  const f = 1.0 / Math.tan(fovy / 2);
-  const nf = 1 / (near - far);
-  out[0] = f / aspect;
-  out[1] = 0;
-  out[2] = 0;
-  out[3] = 0;
-  out[4] = 0;
-  out[5] = f;
-  out[6] = 0;
-  out[7] = 0;
-  out[8] = 0;
-  out[9] = 0;
-  out[10] = (far + near) * nf;
-  out[11] = -1;
-  out[12] = 0;
-  out[13] = 0;
-  out[14] = (2 * far * near) * nf;
-  out[15] = 0;
-  return out;
-}
-
-function mat4LookAt(out, eye, center, up) {
-  let x0; let x1; let x2; let y0; let y1; let y2; let z0; let z1; let z2;
-
-  const eyex = eye[0];
-  const eyey = eye[1];
-  const eyez = eye[2];
-  const upx = up[0];
-  const upy = up[1];
-  const upz = up[2];
-  const centerx = center[0];
-  const centery = center[1];
-  const centerz = center[2];
-
-  if (
-    Math.abs(eyex - centerx) < 1e-6 &&
-    Math.abs(eyey - centery) < 1e-6 &&
-    Math.abs(eyez - centerz) < 1e-6
-  ) {
-    return mat4Identity(out);
-  }
-
-  z0 = eyex - centerx;
-  z1 = eyey - centery;
-  z2 = eyez - centerz;
-
-  let len = Math.hypot(z0, z1, z2);
-  z0 /= len;
-  z1 /= len;
-  z2 /= len;
-
-  x0 = upy * z2 - upz * z1;
-  x1 = upz * z0 - upx * z2;
-  x2 = upx * z1 - upy * z0;
-  len = Math.hypot(x0, x1, x2);
-  if (!len) {
-    x0 = 0;
-    x1 = 0;
-    x2 = 0;
-  } else {
-    x0 /= len;
-    x1 /= len;
-    x2 /= len;
-  }
-
-  y0 = z1 * x2 - z2 * x1;
-  y1 = z2 * x0 - z0 * x2;
-  y2 = z0 * x1 - z1 * x0;
-
-  len = Math.hypot(y0, y1, y2);
-  if (!len) {
-    y0 = 0;
-    y1 = 0;
-    y2 = 0;
-  } else {
-    y0 /= len;
-    y1 /= len;
-    y2 /= len;
-  }
-
-  out[0] = x0;
-  out[1] = y0;
-  out[2] = z0;
-  out[3] = 0;
-  out[4] = x1;
-  out[5] = y1;
-  out[6] = z1;
-  out[7] = 0;
-  out[8] = x2;
-  out[9] = y2;
-  out[10] = z2;
-  out[11] = 0;
-  out[12] = -(x0 * eyex + x1 * eyey + x2 * eyez);
-  out[13] = -(y0 * eyex + y1 * eyey + y2 * eyez);
-  out[14] = -(z0 * eyex + z1 * eyey + z2 * eyez);
-  out[15] = 1;
-  return out;
-}
-
-function mat4RotateY(out, a, rad) {
-  const s = Math.sin(rad);
-  const c = Math.cos(rad);
-  const a00 = a[0]; const a01 = a[1]; const a02 = a[2]; const a03 = a[3];
-  const a10 = a[4]; const a11 = a[5]; const a12 = a[6]; const a13 = a[7];
-  const a20 = a[8]; const a21 = a[9]; const a22 = a[10]; const a23 = a[11];
-
-  out[0] = a00 * c + a20 * s;
-  out[1] = a01 * c + a21 * s;
-  out[2] = a02 * c + a22 * s;
-  out[3] = a03 * c + a23 * s;
-  out[8] = a20 * c - a00 * s;
-  out[9] = a21 * c - a01 * s;
-  out[10] = a22 * c - a02 * s;
-  out[11] = a23 * c - a03 * s;
-  out[4] = a10;
-  out[5] = a11;
-  out[6] = a12;
-  out[7] = a13;
-  out[12] = a[12];
-  out[13] = a[13];
-  out[14] = a[14];
-  out[15] = a[15];
-  return out;
-}
-
-function mat4RotateX(out, a, rad) {
-  const s = Math.sin(rad);
-  const c = Math.cos(rad);
-  const a00 = a[0]; const a01 = a[1]; const a02 = a[2]; const a03 = a[3];
-  const a20 = a[8]; const a21 = a[9]; const a22 = a[10]; const a23 = a[11];
-  const a10 = a[4]; const a11 = a[5]; const a12 = a[6]; const a13 = a[7];
-
-  out[4] = a10 * c + a20 * s;
-  out[5] = a11 * c + a21 * s;
-  out[6] = a12 * c + a22 * s;
-  out[7] = a13 * c + a23 * s;
-  out[8] = a20 * c - a10 * s;
-  out[9] = a21 * c - a11 * s;
-  out[10] = a22 * c - a12 * s;
-  out[11] = a23 * c - a13 * s;
-  out[0] = a00;
-  out[1] = a01;
-  out[2] = a02;
-  out[3] = a03;
-  out[12] = a[12];
-  out[13] = a[13];
-  out[14] = a[14];
-  out[15] = a[15];
-  return out;
-}
-
-function mat3FromMat4(out, mat4) {
-  out[0] = mat4[0]; out[1] = mat4[1]; out[2] = mat4[2];
-  out[3] = mat4[4]; out[4] = mat4[5]; out[5] = mat4[6];
-  out[6] = mat4[8]; out[7] = mat4[9]; out[8] = mat4[10];
-  return out;
-}
-
-function mat3InvertTranspose(out, mat3) {
-  const a00 = mat3[0], a01 = mat3[1], a02 = mat3[2];
-  const a10 = mat3[3], a11 = mat3[4], a12 = mat3[5];
-  const a20 = mat3[6], a21 = mat3[7], a22 = mat3[8];
-
-  const b01 = a22 * a11 - a12 * a21;
-  const b11 = -a22 * a10 + a12 * a20;
-  const b21 = a21 * a10 - a11 * a20;
-
-  let det = a00 * b01 + a01 * b11 + a02 * b21;
-
-  if (!det) {
-    out[0] = 1; out[1] = 0; out[2] = 0;
-    out[3] = 0; out[4] = 1; out[5] = 0;
-    out[6] = 0; out[7] = 0; out[8] = 1;
-    return out;
-  }
-  det = 1.0 / det;
-
-  out[0] = b01 * det;
-  out[1] = (-a22 * a01 + a02 * a21) * det;
-  out[2] = (a12 * a01 - a02 * a11) * det;
-  out[3] = b11 * det;
-  out[4] = (a22 * a00 - a02 * a20) * det;
-  out[5] = (-a12 * a00 + a02 * a10) * det;
-  out[6] = b21 * det;
-  out[7] = (-a21 * a00 + a01 * a20) * det;
-  out[8] = (a11 * a00 - a01 * a10) * det;
-  return out;
-}
-
-function createEarthTexture() {
-  const width = 1024;
-  const height = 512;
-  const texCanvas = document.createElement('canvas');
-  texCanvas.width = width;
-  texCanvas.height = height;
-  const ctx = texCanvas.getContext('2d');
-
-  const gradient = ctx.createLinearGradient(0, 0, 0, height);
-  gradient.addColorStop(0, '#041226');
-  gradient.addColorStop(0.5, '#0a3d66');
-  gradient.addColorStop(1, '#041226');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, width, height);
-
-  const continents = [
-    {
-      color: '#3cb371',
-      alpha: 0.92,
-      outline: 'rgba(14, 94, 64, 0.45)',
-      points: [
-        [-168, 72], [-140, 70], [-124, 60], [-110, 50], [-100, 45], [-95, 40], [-100, 32],
-        [-105, 25], [-110, 20], [-120, 24], [-128, 32], [-140, 40], [-150, 48], [-160, 60],
-      ],
-    },
-    {
-      color: '#3cb371',
-      alpha: 0.92,
-      outline: 'rgba(14, 94, 64, 0.45)',
-      points: [
-        [-82, 12], [-80, 20], [-76, 32], [-72, 40], [-70, 46], [-65, 50], [-60, 52],
-        [-56, 50], [-50, 45], [-44, 40], [-40, 32], [-38, 22], [-42, 12], [-50, 6],
-        [-60, 2], [-70, 0], [-78, 4],
-      ],
-    },
-    {
-      color: '#7fc768',
-      alpha: 0.9,
-      outline: 'rgba(50, 90, 40, 0.45)',
-      points: [
-        [-20, 60], [0, 68], [20, 70], [40, 64], [54, 60], [60, 48], [52, 36], [40, 28],
-        [20, 24], [10, 20], [4, 32], [-4, 40], [-12, 48],
-      ],
-    },
-    {
-      color: '#5aa34f',
-      alpha: 0.92,
-      outline: 'rgba(28, 78, 45, 0.42)',
-      points: [
-        [12, 24], [20, 18], [26, 12], [32, 8], [38, 2], [40, -8], [36, -16], [28, -22],
-        [18, -28], [8, -30], [-2, -32], [-10, -28], [-8, -12], [-2, 4],
-      ],
-    },
-    {
-      color: '#7fc768',
-      alpha: 0.92,
-      outline: 'rgba(36, 88, 50, 0.42)',
-      points: [
-        [60, 20], [70, 18], [82, 20], [96, 24], [110, 30], [120, 40], [126, 48], [132, 56],
-        [140, 58], [150, 50], [160, 44], [168, 36], [170, 28], [162, 20], [150, 12],
-        [140, 8], [128, 6], [116, 4], [104, 0], [92, -4], [84, -6], [74, -4], [66, 2],
-      ],
-    },
-    {
-      color: '#67b96e',
-      alpha: 0.92,
-      outline: 'rgba(25, 80, 45, 0.38)',
-      points: [
-        [44, -4], [52, -8], [62, -12], [74, -16], [84, -22], [94, -28], [104, -32],
-        [114, -28], [118, -18], [120, -8], [118, 2], [110, 6], [100, 8], [90, 10],
-        [80, 6], [70, 2], [60, 0],
-      ],
-    },
-    {
-      color: '#6cc174',
-      alpha: 0.92,
-      outline: 'rgba(20, 70, 40, 0.35)',
-      points: [
-        [40, -28], [50, -36], [60, -40], [70, -42], [80, -40], [90, -38], [100, -36],
-        [108, -32], [112, -26], [114, -18], [110, -12], [100, -10], [90, -12], [80, -14],
-        [70, -16], [58, -18], [48, -22],
-      ],
-    },
-    {
-      color: '#4ea85c',
-      alpha: 0.94,
-      outline: 'rgba(16, 68, 32, 0.4)',
-      points: [
-        [18, -32], [20, -40], [24, -48], [30, -56], [38, -62], [46, -64], [54, -62],
-        [60, -56], [64, -48], [62, -40], [56, -32], [48, -28], [36, -26], [26, -28],
-      ],
-    },
-    {
-      color: '#3cb371',
-      alpha: 0.88,
-      outline: 'rgba(14, 94, 64, 0.45)',
-      points: [
-        [132, 56], [142, 54], [152, 52], [160, 48], [166, 44], [170, 36], [164, 32],
-        [154, 30], [144, 28], [136, 30], [132, 36],
-      ],
-    },
-    {
-      color: '#4eaf63',
-      alpha: 0.9,
-      outline: 'rgba(20, 60, 34, 0.42)',
-      points: [
-        [132, 16], [138, 20], [144, 24], [150, 22], [156, 18], [160, 12], [156, 6],
-        [148, 2], [138, 4], [132, 10],
-      ],
-    },
-  ];
-
-  const toXY = (lon, lat) => [
-    ((lon + 180) / 360) * width,
-    ((90 - lat) / 180) * height,
-  ];
-
-  continents.forEach((continent) => {
-    ctx.beginPath();
-    continent.points.forEach(([lon, lat], index) => {
-      const [x, y] = toXY(lon, lat);
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.closePath();
-    ctx.fillStyle = continent.color;
-    ctx.globalAlpha = continent.alpha;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    if (continent.outline) {
-      ctx.strokeStyle = continent.outline;
-      ctx.lineWidth = 2;
-      ctx.stroke();
+function setupPrograms() {
+  const sphereVertex = `
+    attribute vec3 position;
+    attribute vec3 normal;
+    attribute vec2 uv;
+    uniform mat4 uModelViewMatrix;
+    uniform mat4 uProjectionMatrix;
+    uniform mat3 uNormalMatrix;
+    varying vec3 vNormal;
+    varying vec2 vUv;
+    void main() {
+      vNormal = normalize(uNormalMatrix * normal);
+      vUv = uv;
+      gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(position, 1.0);
     }
-  });
+  `;
 
-  ctx.globalAlpha = 0.2;
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = '#0f3050';
-  for (let lon = -180; lon <= 180; lon += 30) {
-    ctx.beginPath();
-    const [x] = toXY(lon, 0);
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
-    ctx.stroke();
-  }
-  for (let lat = -60; lat <= 60; lat += 30) {
-    ctx.beginPath();
-    const [, y] = toXY(0, lat);
-    ctx.moveTo(0, y);
-    ctx.lineTo(width, y);
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
+  const sphereFragment = `
+    precision mediump float;
+    varying vec3 vNormal;
+    varying vec2 vUv;
+    uniform sampler2D uTexture;
+    uniform vec3 uLightDirection;
+    uniform vec4 uAmbient;
+    void main() {
+      vec3 normal = normalize(vNormal);
+      float light = max(dot(normal, normalize(uLightDirection)), 0.0);
+      vec3 tex = texture2D(uTexture, vUv).rgb;
+      vec3 color = tex * (0.35 + 0.65 * light) + uAmbient.rgb * 0.25;
+      gl_FragColor = vec4(color, 1.0);
+    }
+  `;
 
-  const texture = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, texture);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texCanvas);
-  gl.generateMipmap(gl.TEXTURE_2D);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.bindTexture(gl.TEXTURE_2D, null);
-  return texture;
+  const lineVertex = `
+    attribute vec3 position;
+    uniform mat4 uModelViewMatrix;
+    uniform mat4 uProjectionMatrix;
+    void main() {
+      gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(position, 1.0);
+    }
+  `;
+
+  const lineFragment = `
+    precision mediump float;
+    uniform vec4 uColor;
+    void main() {
+      gl_FragColor = uColor;
+    }
+  `;
+
+  const pointVertex = `
+    attribute vec3 position;
+    attribute vec3 color;
+    attribute float size;
+    varying vec3 vColor;
+    uniform mat4 uModelViewMatrix;
+    uniform mat4 uProjectionMatrix;
+    void main() {
+      vec4 mvPosition = uModelViewMatrix * vec4(position, 1.0);
+      gl_Position = uProjectionMatrix * mvPosition;
+      float dist = -mvPosition.z;
+      gl_PointSize = size * (300.0 / max(1.0, dist));
+      vColor = color;
+    }
+  `;
+
+  const pointFragment = `
+    precision mediump float;
+    varying vec3 vColor;
+    void main() {
+      vec2 coord = gl_PointCoord * 2.0 - 1.0;
+      float len = dot(coord, coord);
+      if (len > 1.0) discard;
+      float intensity = smoothstep(1.0, 0.0, len);
+      gl_FragColor = vec4(vColor * intensity, 1.0);
+    }
+  `;
+
+  sphereProgram = {
+    program: createProgram(sphereVertex, sphereFragment),
+  };
+  sphereProgram.attributes = {
+    position: gl.getAttribLocation(sphereProgram.program, 'position'),
+    normal: gl.getAttribLocation(sphereProgram.program, 'normal'),
+    uv: gl.getAttribLocation(sphereProgram.program, 'uv'),
+  };
+  sphereProgram.uniforms = {
+    modelViewMatrix: gl.getUniformLocation(sphereProgram.program, 'uModelViewMatrix'),
+    projectionMatrix: gl.getUniformLocation(sphereProgram.program, 'uProjectionMatrix'),
+    normalMatrix: gl.getUniformLocation(sphereProgram.program, 'uNormalMatrix'),
+    texture: gl.getUniformLocation(sphereProgram.program, 'uTexture'),
+    lightDirection: gl.getUniformLocation(sphereProgram.program, 'uLightDirection'),
+    ambient: gl.getUniformLocation(sphereProgram.program, 'uAmbient'),
+  };
+
+  lineProgram = {
+    program: createProgram(lineVertex, lineFragment),
+  };
+  lineProgram.attributes = {
+    position: gl.getAttribLocation(lineProgram.program, 'position'),
+  };
+  lineProgram.uniforms = {
+    modelViewMatrix: gl.getUniformLocation(lineProgram.program, 'uModelViewMatrix'),
+    projectionMatrix: gl.getUniformLocation(lineProgram.program, 'uProjectionMatrix'),
+    color: gl.getUniformLocation(lineProgram.program, 'uColor'),
+  };
+
+  pointProgram = {
+    program: createProgram(pointVertex, pointFragment),
+  };
+  pointProgram.attributes = {
+    position: gl.getAttribLocation(pointProgram.program, 'position'),
+    color: gl.getAttribLocation(pointProgram.program, 'color'),
+    size: gl.getAttribLocation(pointProgram.program, 'size'),
+  };
+  pointProgram.uniforms = {
+    modelViewMatrix: gl.getUniformLocation(pointProgram.program, 'uModelViewMatrix'),
+    projectionMatrix: gl.getUniformLocation(pointProgram.program, 'uProjectionMatrix'),
+  };
 }
 
 function createSphereBuffers() {
   const geometry = createSphereGeometry();
-  const vao = gl.createVertexArray();
-  gl.bindVertexArray(vao);
-
   const positionBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, geometry.vertices, gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(0);
-  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
 
   const normalBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, geometry.normals, gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(1);
-  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
 
   const uvBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, uvBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, geometry.uvs, gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(2);
-  gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 0, 0);
 
   const indexBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, geometry.indices, gl.STATIC_DRAW);
 
-  gl.bindVertexArray(null);
+  gl.bindBuffer(gl.ARRAY_BUFFER, null);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
 
   return {
-    vao,
-    indexBuffer,
     positionBuffer,
     normalBuffer,
     uvBuffer,
+    indexBuffer,
     indexCount: geometry.indices.length,
   };
 }
 
 function createLineBuffer() {
-  const vao = gl.createVertexArray();
   const buffer = gl.createBuffer();
-  gl.bindVertexArray(vao);
-  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-  gl.enableVertexAttribArray(0);
-  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-  gl.bindVertexArray(null);
-  return { vao, buffer, count: 0 };
+  return {
+    buffer,
+    count: 0,
+    data: new Float32Array(0),
+  };
 }
 
 function createPointBuffer() {
-  const vao = gl.createVertexArray();
   const buffer = gl.createBuffer();
-  gl.bindVertexArray(vao);
-  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-  gl.enableVertexAttribArray(0);
-  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 28, 0);
-  gl.enableVertexAttribArray(1);
-  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 28, 12);
-  gl.enableVertexAttribArray(2);
-  gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 28, 24);
-  gl.bindVertexArray(null);
-  return { vao, buffer, count: 0 };
-}
-
-function updatePointBuffer(dataArray, count) {
-  if (!gl || !satelliteBuffer) return;
-  gl.bindBuffer(gl.ARRAY_BUFFER, satelliteBuffer.buffer);
-  gl.bufferData(gl.ARRAY_BUFFER, dataArray, gl.DYNAMIC_DRAW);
-  satelliteBuffer.count = count;
-}
-
-function updateStationBuffer(dataArray, count) {
-  if (!gl || !stationBuffer) return;
-  gl.bindBuffer(gl.ARRAY_BUFFER, stationBuffer.buffer);
-  gl.bufferData(gl.ARRAY_BUFFER, dataArray, gl.DYNAMIC_DRAW);
-  stationBuffer.count = count;
+  return {
+    buffer,
+    count: 0,
+    data: new Float32Array(0),
+  };
 }
 
 function updateLineBuffer(target, data, count) {
+  target.count = count;
+  target.data = data;
   gl.bindBuffer(gl.ARRAY_BUFFER, target.buffer);
   gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
-  target.count = count;
+  gl.bindBuffer(gl.ARRAY_BUFFER, null);
 }
 
-function setupPrograms() {
-  const sphereVertex = `#version 300 es
-    layout(location=0) in vec3 aPosition;
-    layout(location=1) in vec3 aNormal;
-    layout(location=2) in vec2 aUv;
+function updatePointBuffer(target, data, count) {
+  target.count = count;
+  target.data = data;
+  gl.bindBuffer(gl.ARRAY_BUFFER, target.buffer);
+  gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, null);
+}
 
-    uniform mat4 uProjection;
-    uniform mat4 uModelView;
-    uniform mat3 uNormalMatrix;
+function generatePolygon(ctx, polygon, width, height) {
+  if (!polygon.length) return;
+  ctx.beginPath();
+  polygon.forEach((coord, index) => {
+    const x = ((coord.lon + 180) / 360) * width;
+    const y = ((90 - coord.lat) / 180) * height;
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+}
 
-    out vec3 vNormal;
-    out vec2 vUv;
-    out vec3 vPosition;
+function generateEarthTextureCanvas() {
+  const width = 1024;
+  const height = 512;
+  const canvasTex = document.createElement('canvas');
+  canvasTex.width = width;
+  canvasTex.height = height;
+  const ctx = canvasTex.getContext('2d');
 
-    void main() {
-      vec4 mvPosition = uModelView * vec4(aPosition, 1.0);
-      vPosition = mvPosition.xyz;
-      vNormal = normalize(uNormalMatrix * aNormal);
-      vUv = aUv;
-      gl_Position = uProjection * mvPosition;
-    }
-  `;
+  const gradient = ctx.createLinearGradient(0, 0, 0, height);
+  gradient.addColorStop(0, '#12326b');
+  gradient.addColorStop(1, '#061227');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
 
-  const sphereFragment = `#version 300 es
-    precision highp float;
-    in vec3 vNormal;
-    in vec2 vUv;
-    in vec3 vPosition;
+  ctx.globalAlpha = 0.25;
+  ctx.fillStyle = '#0a1f3f';
+  for (let lat = -60; lat <= 60; lat += 30) {
+    const y = ((90 - lat) / 180) * height;
+    ctx.fillRect(0, y - 1, width, 2);
+  }
+  for (let lon = -150; lon <= 150; lon += 30) {
+    const x = ((lon + 180) / 360) * width;
+    ctx.fillRect(x - 1, 0, 2, height);
+  }
+  ctx.globalAlpha = 1;
 
-    uniform sampler2D uTexture;
-    uniform vec3 uLightDirection;
+  const landColor = '#2da574';
+  const borderColor = 'rgba(12, 53, 34, 0.9)';
+  ctx.fillStyle = landColor;
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = 2;
 
-    out vec4 fragColor;
+  const continents = [
+    {
+      name: 'NorthAmerica',
+      polygon: [
+        { lat: 72, lon: -170 }, { lat: 75, lon: -150 }, { lat: 74, lon: -130 },
+        { lat: 70, lon: -110 }, { lat: 60, lon: -98 }, { lat: 58, lon: -85 },
+        { lat: 52, lon: -75 }, { lat: 47, lon: -64 }, { lat: 43, lon: -60 },
+        { lat: 32, lon: -80 }, { lat: 28, lon: -100 }, { lat: 22, lon: -107 },
+        { lat: 15, lon: -95 }, { lat: 18, lon: -80 }, { lat: 25, lon: -75 },
+        { lat: 32, lon: -70 }, { lat: 44, lon: -66 }, { lat: 55, lon: -75 },
+        { lat: 60, lon: -95 }, { lat: 65, lon: -120 }, { lat: 60, lon: -150 },
+        { lat: 58, lon: -165 }, { lat: 66, lon: -173 },
+      ],
+    },
+    {
+      name: 'SouthAmerica',
+      polygon: [
+        { lat: 12, lon: -81 }, { lat: 8, lon: -75 }, { lat: 4, lon: -70 },
+        { lat: -5, lon: -74 }, { lat: -15, lon: -70 }, { lat: -30, lon: -60 },
+        { lat: -45, lon: -63 }, { lat: -55, lon: -68 }, { lat: -55, lon: -75 },
+        { lat: -35, lon: -80 }, { lat: -20, lon: -81 }, { lat: -5, lon: -82 },
+        { lat: 2, lon: -80 },
+      ],
+    },
+    {
+      name: 'Africa',
+      polygon: [
+        { lat: 33, lon: -17 }, { lat: 36, lon: -5 }, { lat: 37, lon: 5 },
+        { lat: 35, lon: 15 }, { lat: 33, lon: 24 }, { lat: 30, lon: 32 },
+        { lat: 25, lon: 35 }, { lat: 12, lon: 44 }, { lat: -5, lon: 49 },
+        { lat: -18, lon: 46 }, { lat: -30, lon: 34 }, { lat: -34, lon: 20 },
+        { lat: -35, lon: 12 }, { lat: -26, lon: 5 }, { lat: -15, lon: 0 },
+        { lat: -5, lon: -5 }, { lat: 6, lon: -10 }, { lat: 15, lon: -15 },
+        { lat: 24, lon: -17 },
+      ],
+    },
+    {
+      name: 'Eurasia',
+      polygon: [
+        { lat: 35, lon: -10 }, { lat: 43, lon: -2 }, { lat: 50, lon: 5 },
+        { lat: 52, lon: 15 }, { lat: 55, lon: 25 }, { lat: 60, lon: 38 },
+        { lat: 65, lon: 55 }, { lat: 68, lon: 75 }, { lat: 66, lon: 100 },
+        { lat: 62, lon: 120 }, { lat: 60, lon: 135 }, { lat: 55, lon: 150 },
+        { lat: 48, lon: 160 }, { lat: 45, lon: 170 }, { lat: 40, lon: 178 },
+        { lat: 30, lon: 170 }, { lat: 18, lon: 155 }, { lat: 10, lon: 135 },
+        { lat: 5, lon: 115 }, { lat: -2, lon: 105 }, { lat: 5, lon: 95 },
+        { lat: 12, lon: 85 }, { lat: 20, lon: 80 }, { lat: 25, lon: 70 },
+        { lat: 30, lon: 60 }, { lat: 28, lon: 48 }, { lat: 32, lon: 40 },
+        { lat: 38, lon: 32 }, { lat: 42, lon: 25 }, { lat: 40, lon: 15 },
+        { lat: 37, lon: 5 },
+      ],
+    },
+    {
+      name: 'Australia',
+      polygon: [
+        { lat: -10, lon: 113 }, { lat: -24, lon: 113 }, { lat: -34, lon: 119 },
+        { lat: -38, lon: 132 }, { lat: -36, lon: 147 }, { lat: -28, lon: 154 },
+        { lat: -18, lon: 150 }, { lat: -11, lon: 140 },
+      ],
+    },
+    {
+      name: 'Greenland',
+      polygon: [
+        { lat: 82, lon: -72 }, { lat: 78, lon: -60 }, { lat: 70, lon: -45 },
+        { lat: 62, lon: -37 }, { lat: 60, lon: -50 }, { lat: 68, lon: -60 },
+        { lat: 74, lon: -65 }, { lat: 80, lon: -70 },
+      ],
+    },
+  ];
 
-    void main() {
-      vec3 normal = normalize(vNormal);
-      vec3 lightDir = normalize(uLightDirection);
-      float diffuse = max(dot(normal, lightDir), 0.0);
-      float rim = pow(1.0 - max(dot(normal, normalize(-vPosition)), 0.0), 3.0);
-      vec3 texColor = texture(uTexture, vUv).rgb;
-      vec3 color = texColor * (0.25 + 0.75 * diffuse) + vec3(0.1, 0.14, 0.18) * rim;
-      fragColor = vec4(color, 1.0);
-    }
-  `;
+  continents.forEach((shape) => generatePolygon(ctx, shape.polygon, width, height));
 
-  const lineVertex = `#version 300 es
-    layout(location=0) in vec3 aPosition;
-    uniform mat4 uViewProjection;
-    uniform mat4 uModel;
-    void main() {
-      gl_Position = uViewProjection * (uModel * vec4(aPosition, 1.0));
-    }
-  `;
+  // Madagascar
+  ctx.beginPath();
+  const madagascar = [
+    { lat: -12, lon: 48 }, { lat: -18, lon: 50 }, { lat: -24, lon: 47 },
+    { lat: -18, lon: 45 },
+  ];
+  madagascar.forEach((coord, index) => {
+    const x = ((coord.lon + 180) / 360) * width;
+    const y = ((90 - coord.lat) / 180) * height;
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
 
-  const lineFragment = `#version 300 es
-    precision mediump float;
-    uniform vec3 uColor;
-    out vec4 fragColor;
-    void main() {
-      fragColor = vec4(uColor, 1.0);
-    }
-  `;
+  // Antarctica ring
+  ctx.fillStyle = '#69c6b7';
+  ctx.strokeStyle = 'rgba(9, 37, 47, 0.9)';
+  const antarctica = [];
+  for (let i = 0; i <= 36; i++) {
+    const lon = -180 + (i / 36) * 360;
+    const lat = -70 - Math.sin((i / 36) * Math.PI * 2) * 4;
+    antarctica.push({ lat, lon });
+  }
+  generatePolygon(ctx, antarctica, width, height);
 
-  const pointVertex = `#version 300 es
-    layout(location=0) in vec3 aPosition;
-    layout(location=1) in vec3 aColor;
-    layout(location=2) in float aSize;
+  return canvasTex;
+}
 
-    uniform mat4 uViewProjection;
-    uniform mat4 uModel;
-    uniform float uPixelRatio;
-
-    out vec3 vColor;
-
-    void main() {
-      vec4 worldPos = uModel * vec4(aPosition, 1.0);
-      vec4 clip = uViewProjection * worldPos;
-      gl_Position = clip;
-      float size = aSize / max(clip.w, 0.0001);
-      gl_PointSize = size * uPixelRatio;
-      vColor = aColor;
-    }
-  `;
-
-  const pointFragment = `#version 300 es
-    precision mediump float;
-    in vec3 vColor;
-    out vec4 fragColor;
-
-    void main() {
-      vec2 uv = gl_PointCoord * 2.0 - 1.0;
-      float d = dot(uv, uv);
-      if (d > 1.0) {
-        discard;
-      }
-      float alpha = smoothstep(1.0, 0.7, d);
-      fragColor = vec4(vColor, alpha);
-    }
-  `;
-
-  sphereProgram = createProgram(sphereVertex, sphereFragment);
-  lineProgram = createProgram(lineVertex, lineFragment);
-  pointProgram = createProgram(pointVertex, pointFragment);
+function createEarthTexture() {
+  const canvasTex = generateEarthTextureCanvas();
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvasTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+  return texture;
 }
 
 function updateViewport() {
-  if (!canvas || !containerRef || !gl) return;
-  const width = Math.max(1, containerRef.clientWidth);
-  const height = Math.max(1, containerRef.clientHeight);
+  if (!gl || !canvas || !containerRef) return;
   const dpr = window.devicePixelRatio || 1;
-  pixelRatio = dpr;
+  const { clientWidth, clientHeight } = containerRef;
+  const width = Math.max(1, clientWidth);
+  const height = Math.max(1, clientHeight);
   canvas.width = width * dpr;
   canvas.height = height * dpr;
   canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
   gl.viewport(0, 0, canvas.width, canvas.height);
-  mat4Perspective(projectionMatrix, (48 * DEG2RAD), width / height, 0.1, 100);
+  mat4Perspective(
+    projectionMatrix,
+    Math.PI / 4,
+    canvas.width / canvas.height,
+    0.1,
+    100,
+  );
 }
 
-function setupInteractions() {
-  let pointerActive = false;
-  let lastX = 0;
-  let lastY = 0;
+function updateCameraMatrices() {
+  const phi = rotationX;
+  const theta = rotationY;
+  const sinPhi = Math.sin(phi);
+  const cosPhi = Math.cos(phi);
+  const sinTheta = Math.sin(theta);
+  const cosTheta = Math.cos(theta);
 
-  const handlePointerDown = (event) => {
-    pointerActive = true;
-    lastX = event.clientX;
-    lastY = event.clientY;
-    canvas.setPointerCapture(event.pointerId);
-  };
+  const eyeX = cameraRadius * sinPhi * cosTheta;
+  const eyeY = cameraRadius * cosPhi;
+  const eyeZ = cameraRadius * sinPhi * sinTheta;
 
-  const handlePointerMove = (event) => {
-    if (!pointerActive) return;
-    const dx = event.clientX - lastX;
-    const dy = event.clientY - lastY;
-    lastX = event.clientX;
-    lastY = event.clientY;
-    rotationY += dx * 0.005;
-    rotationX += dy * 0.005;
-    rotationX = clamp(rotationX, -Math.PI / 2 + 0.1, Math.PI / 2 - 0.1);
-  };
+  mat4LookAt(viewMatrix, [eyeX, eyeY, eyeZ], [0, 0, 0], [0, 1, 0]);
 
-  const handlePointerUp = (event) => {
-    pointerActive = false;
-    canvas.releasePointerCapture(event.pointerId);
-  };
+  mat4RotateY(modelMatrix, earthRotation);
 
-  const handleWheel = (event) => {
-    event.preventDefault();
-    cameraRadius = clamp(cameraRadius + event.deltaY * 0.0025, MIN_RADIUS, MAX_RADIUS);
-  };
-
-  canvas.addEventListener('pointerdown', handlePointerDown);
-  canvas.addEventListener('pointermove', handlePointerMove);
-  canvas.addEventListener('pointerup', handlePointerUp);
-  canvas.addEventListener('pointercancel', handlePointerUp);
-  canvas.addEventListener('wheel', handleWheel, { passive: false });
+  mat4Multiply(modelViewMatrix, viewMatrix, modelMatrix);
+  const normalMat = new Float32Array(9);
+  mat3FromMat4(normalMat, modelViewMatrix);
+  mat3InvertTranspose(normalMatrix, normalMat);
 }
 
-function drawScene() {
+function drawSphere() {
+  if (!sphereProgram || !sphereBuffers) return;
+  gl.useProgram(sphereProgram.program);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, sphereBuffers.positionBuffer);
+  gl.enableVertexAttribArray(sphereProgram.attributes.position);
+  gl.vertexAttribPointer(sphereProgram.attributes.position, 3, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, sphereBuffers.normalBuffer);
+  gl.enableVertexAttribArray(sphereProgram.attributes.normal);
+  gl.vertexAttribPointer(sphereProgram.attributes.normal, 3, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, sphereBuffers.uvBuffer);
+  gl.enableVertexAttribArray(sphereProgram.attributes.uv);
+  gl.vertexAttribPointer(sphereProgram.attributes.uv, 2, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sphereBuffers.indexBuffer);
+
+  gl.uniformMatrix4fv(sphereProgram.uniforms.modelViewMatrix, false, modelViewMatrix);
+  gl.uniformMatrix4fv(sphereProgram.uniforms.projectionMatrix, false, projectionMatrix);
+  gl.uniformMatrix3fv(sphereProgram.uniforms.normalMatrix, false, normalMatrix);
+  gl.uniform3fv(sphereProgram.uniforms.lightDirection, new Float32Array([-0.4, 0.5, 0.8]));
+  const ambient = currentTheme === 'dark'
+    ? new Float32Array([0.03, 0.05, 0.12, 1])
+    : new Float32Array([0.08, 0.1, 0.18, 1]);
+  gl.uniform4fv(sphereProgram.uniforms.ambient, ambient);
+
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, earthTexture);
+  gl.uniform1i(sphereProgram.uniforms.texture, 0);
+
+  gl.drawElements(gl.TRIANGLES, sphereBuffers.indexCount, gl.UNSIGNED_SHORT, 0);
+
+  gl.disableVertexAttribArray(sphereProgram.attributes.position);
+  gl.disableVertexAttribArray(sphereProgram.attributes.normal);
+  gl.disableVertexAttribArray(sphereProgram.attributes.uv);
+  gl.bindBuffer(gl.ARRAY_BUFFER, null);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+}
+
+function drawLine(buffer, color, mode = gl.LINE_STRIP) {
+  if (!buffer || !buffer.count) return;
+  gl.useProgram(lineProgram.program);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
+  gl.enableVertexAttribArray(lineProgram.attributes.position);
+  gl.vertexAttribPointer(lineProgram.attributes.position, 3, gl.FLOAT, false, 0, 0);
+
+  gl.uniformMatrix4fv(lineProgram.uniforms.modelViewMatrix, false, modelViewMatrix);
+  gl.uniformMatrix4fv(lineProgram.uniforms.projectionMatrix, false, projectionMatrix);
+  gl.uniform4fv(lineProgram.uniforms.color, color);
+
+  if (gl.lineWidth) {
+    gl.lineWidth(2);
+  }
+  gl.drawArrays(mode, 0, buffer.count);
+
+  gl.disableVertexAttribArray(lineProgram.attributes.position);
+  gl.bindBuffer(gl.ARRAY_BUFFER, null);
+}
+
+function drawPoints(buffer) {
+  if (!buffer || !buffer.count) return;
+  gl.useProgram(pointProgram.program);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
+  const stride = 7 * Float32Array.BYTES_PER_ELEMENT;
+  gl.enableVertexAttribArray(pointProgram.attributes.position);
+  gl.vertexAttribPointer(pointProgram.attributes.position, 3, gl.FLOAT, false, stride, 0);
+  gl.enableVertexAttribArray(pointProgram.attributes.color);
+  gl.vertexAttribPointer(pointProgram.attributes.color, 3, gl.FLOAT, false, stride, 3 * Float32Array.BYTES_PER_ELEMENT);
+  gl.enableVertexAttribArray(pointProgram.attributes.size);
+  gl.vertexAttribPointer(pointProgram.attributes.size, 1, gl.FLOAT, false, stride, 6 * Float32Array.BYTES_PER_ELEMENT);
+
+  gl.uniformMatrix4fv(pointProgram.uniforms.modelViewMatrix, false, modelViewMatrix);
+  gl.uniformMatrix4fv(pointProgram.uniforms.projectionMatrix, false, projectionMatrix);
+
+  gl.drawArrays(gl.POINTS, 0, buffer.count);
+
+  gl.disableVertexAttribArray(pointProgram.attributes.position);
+  gl.disableVertexAttribArray(pointProgram.attributes.color);
+  gl.disableVertexAttribArray(pointProgram.attributes.size);
+  gl.bindBuffer(gl.ARRAY_BUFFER, null);
+}
+
+function render(now = 0) {
   if (!gl || !ready) return;
-  const clearColor = themeColors[currentTheme] || themeColors.dark;
-  gl.clearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
+  animationId = requestAnimationFrame(render);
+  const delta = lastFrameTime ? (now - lastFrameTime) / 1000 : 0;
+  lastFrameTime = now;
+  earthRotation = (earthRotation + delta * ROTATION_SPEED) % (Math.PI * 2);
+
+  updateViewport();
+  updateCameraMatrices();
+
+  const clearColor = currentTheme === 'dark'
+    ? [0.02, 0.04, 0.09, 1]
+    : [0.86, 0.9, 0.98, 1];
+  gl.clearColor(...clearColor);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-  const eye = [
-    cameraRadius * Math.cos(rotationX) * Math.sin(rotationY),
-    cameraRadius * Math.sin(rotationX),
-    cameraRadius * Math.cos(rotationX) * Math.cos(rotationY),
-  ];
-
-  mat4LookAt(viewMatrix, eye, [0, 0, 0], [0, 1, 0]);
-  mat4Identity(modelMatrix);
-  mat4RotateY(modelMatrix, modelMatrix, earthRotation);
-  mat4RotateX(modelMatrix, modelMatrix, 0.4091);
-  mat4Multiply(modelViewMatrix, viewMatrix, modelMatrix);
-  mat4Multiply(viewProjectionMatrix, projectionMatrix, viewMatrix);
-
-  mat3FromMat4(normalMatrix, modelViewMatrix);
-  mat3InvertTranspose(normalMatrix, normalMatrix);
-
-  gl.useProgram(sphereProgram);
-  gl.bindVertexArray(sphereBuffers.vao);
-  gl.uniformMatrix4fv(gl.getUniformLocation(sphereProgram, 'uProjection'), false, projectionMatrix);
-  gl.uniformMatrix4fv(gl.getUniformLocation(sphereProgram, 'uModelView'), false, modelViewMatrix);
-  gl.uniformMatrix3fv(gl.getUniformLocation(sphereProgram, 'uNormalMatrix'), false, normalMatrix);
-  gl.uniform3f(gl.getUniformLocation(sphereProgram, 'uLightDirection'), -0.6, 0.5, 0.6);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, sphereTexture);
-  gl.uniform1i(gl.getUniformLocation(sphereProgram, 'uTexture'), 0);
-  gl.drawElements(gl.TRIANGLES, sphereBuffers.indexCount, gl.UNSIGNED_INT, 0);
-
-  gl.useProgram(lineProgram);
-  gl.uniformMatrix4fv(gl.getUniformLocation(lineProgram, 'uViewProjection'), false, viewProjectionMatrix);
-  gl.uniformMatrix4fv(gl.getUniformLocation(lineProgram, 'uModel'), false, modelMatrix);
-  if (orbitBuffer.count > 1) {
-    gl.bindVertexArray(orbitBuffer.vao);
-    gl.uniform3f(gl.getUniformLocation(lineProgram, 'uColor'), 0.49, 0.23, 0.93);
-    gl.drawArrays(gl.LINE_STRIP, 0, orbitBuffer.count);
+  drawSphere();
+  drawLine(orbitBuffer, currentTheme === 'dark' ? new Float32Array([0.38, 0.72, 0.98, 0.85]) : new Float32Array([0.08, 0.36, 0.82, 0.85]));
+  if (linkVisible) {
+    drawLine(linkBuffer, currentTheme === 'dark' ? new Float32Array([0.98, 0.62, 0.3, 0.95]) : new Float32Array([0.84, 0.24, 0.15, 0.95]), gl.LINES);
   }
-  if (linkVisible && linkBuffer.count === 2) {
-    gl.bindVertexArray(linkBuffer.vao);
-    gl.uniform3f(gl.getUniformLocation(lineProgram, 'uColor'), 0.22, 0.74, 0.97);
-    gl.drawArrays(gl.LINE_STRIP, 0, 2);
-  }
-
-  gl.useProgram(pointProgram);
-  gl.uniformMatrix4fv(gl.getUniformLocation(pointProgram, 'uViewProjection'), false, viewProjectionMatrix);
-  gl.uniformMatrix4fv(gl.getUniformLocation(pointProgram, 'uModel'), false, modelMatrix);
-  gl.uniform1f(gl.getUniformLocation(pointProgram, 'uPixelRatio'), pixelRatio);
-
-  if (stationBuffer.count > 0) {
-    gl.bindVertexArray(stationBuffer.vao);
-    gl.drawArrays(gl.POINTS, 0, stationBuffer.count);
-  }
-
-  if (satelliteBuffer.count > 0) {
-    gl.bindVertexArray(satelliteBuffer.vao);
-    gl.drawArrays(gl.POINTS, 0, satelliteBuffer.count);
-  }
-
-  earthRotation += 0.0005;
-  if (earthRotation > Math.PI * 2) {
-    earthRotation -= Math.PI * 2;
-  }
-}
-
-function renderLoop() {
-  drawScene();
-  animationId = requestAnimationFrame(renderLoop);
+  drawPoints(stationBuffer);
+  drawPoints(satelliteBuffer);
 }
 
 function resetData() {
-  linkVisible = false;
-  earthRotation = 0;
-  rotationX = 0.6;
-  rotationY = 0.8;
-  cameraRadius = 3.2;
   if (orbitBuffer) updateLineBuffer(orbitBuffer, new Float32Array(), 0);
-  if (linkBuffer) {
-    linkVisible = false;
-    updateLineBuffer(linkBuffer, new Float32Array(), 0);
-  }
-  if (satelliteBuffer) updatePointBuffer(new Float32Array(), 0);
-  if (stationBuffer) updateStationBuffer(new Float32Array(), 0);
+  if (linkBuffer) updateLineBuffer(linkBuffer, new Float32Array(), 0);
+  if (satelliteBuffer) updatePointBuffer(satelliteBuffer, new Float32Array(), 0);
+  if (stationBuffer) updatePointBuffer(stationBuffer, new Float32Array(), 0);
+  linkVisible = false;
+}
+
+function setupInteractions() {
+  if (!canvas) return;
+  canvas.addEventListener('pointerdown', (event) => {
+    pointerState.active = true;
+    pointerState.x = event.clientX;
+    pointerState.y = event.clientY;
+    pointerState.startRotX = rotationX;
+    pointerState.startRotY = rotationY;
+    canvas.setPointerCapture(event.pointerId);
+  });
+
+  canvas.addEventListener('pointermove', (event) => {
+    if (!pointerState.active) return;
+    const dx = event.clientX - pointerState.x;
+    const dy = event.clientY - pointerState.y;
+    rotationY = pointerState.startRotY + dx * 0.005;
+    rotationX = clampRotationX(pointerState.startRotX + dy * 0.005);
+  });
+
+  canvas.addEventListener('pointerup', (event) => {
+    pointerState.active = false;
+    if (canvas.hasPointerCapture(event.pointerId)) {
+      canvas.releasePointerCapture(event.pointerId);
+    }
+  });
+
+  canvas.addEventListener('pointerleave', () => {
+    pointerState.active = false;
+  });
+
+  canvas.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    cameraRadius = clamp(cameraRadius + event.deltaY * 0.0015, MIN_RADIUS, MAX_RADIUS);
+  }, { passive: false });
+
+  canvas.addEventListener('dblclick', () => {
+    cameraRadius = 3.2;
+  });
 }
 
 export async function initScene(container) {
   containerRef = container;
   if (!containerRef) return null;
-  showFallback = containerRef.querySelector('#threeFallback');
-  if (showFallback) {
-    showFallback.hidden = true;
-  }
+  fallbackEl = containerRef.querySelector('#threeFallback');
+  if (fallbackEl) fallbackEl.hidden = true;
 
   if (canvas?.parentElement === containerRef) {
     containerRef.removeChild(canvas);
@@ -881,12 +881,13 @@ export async function initScene(container) {
   canvas.style.touchAction = 'none';
   containerRef.appendChild(canvas);
 
-  gl = canvas.getContext('webgl2', { antialias: true });
+  gl = canvas.getContext('webgl', { antialias: true })
+    || canvas.getContext('experimental-webgl', { antialias: true });
 
   if (!gl) {
-    if (showFallback) {
-      showFallback.hidden = false;
-      showFallback.textContent = 'WebGL 2 no está disponible en este navegador.';
+    if (fallbackEl) {
+      fallbackEl.hidden = false;
+      fallbackEl.textContent = 'WebGL no está disponible en este navegador.';
     }
     return null;
   }
@@ -894,16 +895,17 @@ export async function initScene(container) {
   try {
     gl.enable(gl.DEPTH_TEST);
     gl.enable(gl.CULL_FACE);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.cullFace(gl.BACK);
+    gl.depthFunc(gl.LEQUAL);
+
     setupPrograms();
     sphereBuffers = createSphereBuffers();
     orbitBuffer = createLineBuffer();
     linkBuffer = createLineBuffer();
     satelliteBuffer = createPointBuffer();
     stationBuffer = createPointBuffer();
-    sphereTexture = createEarthTexture();
+    earthTexture = createEarthTexture();
+
     resetData();
     setupInteractions();
     updateViewport();
@@ -917,13 +919,14 @@ export async function initScene(container) {
     window.addEventListener('resize', windowResizeHandler);
 
     ready = true;
-    renderLoop();
+    lastFrameTime = 0;
+    animationId = requestAnimationFrame(render);
   } catch (error) {
     console.error(error);
     ready = false;
-    if (showFallback) {
-      showFallback.hidden = false;
-      showFallback.textContent = 'No se pudo inicializar la vista 3D.';
+    if (fallbackEl) {
+      fallbackEl.hidden = false;
+      fallbackEl.textContent = 'No se pudo inicializar la vista 3D.';
     }
     return null;
   }
@@ -953,40 +956,41 @@ export function updateOrbitPath(points) {
 }
 
 export function updateSatellite(point) {
-  if (!gl || !point || !satelliteBuffer) return;
+  if (!gl || !satelliteBuffer || !point) return;
   const [x, y, z] = latLonToVector(point.lat, point.lon, point.alt);
   satelliteData[0] = x;
   satelliteData[1] = y;
   satelliteData[2] = z;
-  satelliteData[3] = 1.0;
-  satelliteData[4] = 0.56;
+  satelliteData[3] = 0.98;
+  satelliteData[4] = 0.78;
   satelliteData[5] = 0.18;
   satelliteData[6] = 36;
-  updatePointBuffer(satelliteData, 1);
+  updatePointBuffer(satelliteBuffer, satelliteData, 1);
 }
 
 export function renderStations(stations, selectedId) {
   if (!gl || !stationBuffer) return;
   if (!stations?.length) {
-    updateStationBuffer(new Float32Array(), 0);
-    stationsData.length = 0;
+    updatePointBuffer(stationBuffer, new Float32Array(), 0);
+    stationData.array = new Float32Array(0);
+    stationData.count = 0;
     return;
   }
-  stationsData.length = 0;
-  stations.forEach((station) => {
+  const data = new Float32Array(stations.length * 7);
+  stations.forEach((station, idx) => {
     const [x, y, z] = latLonToVector(station.lat, station.lon, 0.02);
     const highlight = station.id === selectedId;
-    stationsData.push(
-      x,
-      y,
-      z,
-      highlight ? 0.98 : 0.09,
-      highlight ? 0.85 : 0.65,
-      highlight ? 0.22 : 0.9,
-      highlight ? 28 : 18,
-    );
+    data[idx * 7] = x;
+    data[idx * 7 + 1] = y;
+    data[idx * 7 + 2] = z;
+    data[idx * 7 + 3] = highlight ? 0.98 : 0.18;
+    data[idx * 7 + 4] = highlight ? 0.52 : 0.68;
+    data[idx * 7 + 5] = highlight ? 0.2 : 0.95;
+    data[idx * 7 + 6] = highlight ? 26 : 18;
   });
-  updateStationBuffer(new Float32Array(stationsData), stations.length);
+  stationData.array = data;
+  stationData.count = stations.length;
+  updatePointBuffer(stationBuffer, data, stations.length);
 }
 
 export function updateLink(point, station) {
@@ -1015,21 +1019,19 @@ export function disposeScene() {
   }
   if (gl) {
     if (sphereBuffers) {
-      if (sphereBuffers.vao) gl.deleteVertexArray(sphereBuffers.vao);
-      if (sphereBuffers.indexBuffer) gl.deleteBuffer(sphereBuffers.indexBuffer);
       if (sphereBuffers.positionBuffer) gl.deleteBuffer(sphereBuffers.positionBuffer);
       if (sphereBuffers.normalBuffer) gl.deleteBuffer(sphereBuffers.normalBuffer);
       if (sphereBuffers.uvBuffer) gl.deleteBuffer(sphereBuffers.uvBuffer);
+      if (sphereBuffers.indexBuffer) gl.deleteBuffer(sphereBuffers.indexBuffer);
     }
     [orbitBuffer, linkBuffer, satelliteBuffer, stationBuffer].forEach((resource) => {
       if (!resource) return;
-      if (resource.vao) gl.deleteVertexArray(resource.vao);
       if (resource.buffer) gl.deleteBuffer(resource.buffer);
     });
-    if (sphereTexture) gl.deleteTexture(sphereTexture);
-    if (sphereProgram) gl.deleteProgram(sphereProgram);
-    if (lineProgram) gl.deleteProgram(lineProgram);
-    if (pointProgram) gl.deleteProgram(pointProgram);
+    if (earthTexture) gl.deleteTexture(earthTexture);
+    if (sphereProgram?.program) gl.deleteProgram(sphereProgram.program);
+    if (lineProgram?.program) gl.deleteProgram(lineProgram.program);
+    if (pointProgram?.program) gl.deleteProgram(pointProgram.program);
   }
   sphereProgram = null;
   lineProgram = null;
@@ -1039,8 +1041,9 @@ export function disposeScene() {
   linkBuffer = null;
   satelliteBuffer = null;
   stationBuffer = null;
-  sphereTexture = null;
+  earthTexture = null;
   gl = null;
   canvas = null;
   ready = false;
 }
+
