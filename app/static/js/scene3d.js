@@ -12,6 +12,7 @@ let OrbitControls;
 let threePromise;
 
 let containerEl;
+let canvasEl;
 let fallbackEl;
 let renderer;
 let scene;
@@ -103,18 +104,19 @@ function setupRenderer() {
   if (!containerEl) {
     throw new Error('No existe contenedor para inicializar el renderizador.');
   }
+  if (!canvasEl) {
+    throw new Error('No se encontró el canvas exclusivo para la vista 3D.');
+  }
 
-  // Limpia cualquier canvas previo que pudiera haber quedado del fallback u otros intentos.
-  containerEl.querySelectorAll('canvas').forEach((canvas) => {
-    if (canvas.parentElement === containerEl) {
-      canvas.remove();
-    }
-  });
+  canvasEl.classList.remove('is-hidden');
+  canvasEl.setAttribute('aria-hidden', 'false');
 
-  const canvas = document.createElement('canvas');
-  canvas.setAttribute('data-role', 'three-view');
-  canvas.style.width = '100%';
-  canvas.style.height = '100%';
+  const width = Math.max(containerEl.clientWidth, 1);
+  const height = Math.max(containerEl.clientHeight, 1);
+  if (canvasEl.width !== width || canvasEl.height !== height) {
+    canvasEl.width = width;
+    canvasEl.height = height;
+  }
 
   const contextAttributes = {
     alpha: true,
@@ -125,9 +127,11 @@ function setupRenderer() {
     powerPreference: 'high-performance',
   };
 
-  let gl = canvas.getContext('webgl2', contextAttributes);
+  let gl = canvasEl.getContext('webgl2', contextAttributes);
   if (!gl) {
-    gl = canvas.getContext('webgl', contextAttributes) || canvas.getContext('experimental-webgl', contextAttributes);
+    gl =
+      canvasEl.getContext('webgl', contextAttributes) ||
+      canvasEl.getContext('experimental-webgl', contextAttributes);
   }
 
   if (!gl) {
@@ -135,7 +139,7 @@ function setupRenderer() {
   }
 
   renderer = new THREE.WebGLRenderer({
-    canvas,
+    canvas: canvasEl,
     context: gl,
     antialias: true,
     alpha: true,
@@ -144,11 +148,7 @@ function setupRenderer() {
   renderer.setPixelRatio(window.devicePixelRatio || 1);
   renderer.setClearColor(0x0f172a, 1);
 
-  if (!canvas.parentElement) {
-    containerEl.appendChild(canvas);
-  }
-
-  canvas.addEventListener('webglcontextlost', (event) => {
+  canvasEl.addEventListener('webglcontextlost', (event) => {
     event.preventDefault();
     showFallback('Se perdió el contexto WebGL. Recarga la página para reiniciar la vista 3D.');
     isReady = false;
@@ -265,6 +265,10 @@ function hideFallback() {
   if (fallbackEl) {
     fallbackEl.hidden = true;
   }
+  if (canvasEl) {
+    canvasEl.classList.remove('is-hidden');
+    canvasEl.setAttribute('aria-hidden', 'false');
+  }
 }
 
 function showFallback(message) {
@@ -272,12 +276,22 @@ function showFallback(message) {
     fallbackEl.textContent = message || 'No se pudo inicializar la escena 3D.';
     fallbackEl.hidden = false;
   }
+  if (canvasEl) {
+    canvasEl.classList.add('is-hidden');
+    canvasEl.setAttribute('aria-hidden', 'true');
+  }
 }
 
 export async function initScene(container) {
   containerEl = container;
+  canvasEl = container?.querySelector('#threeCanvas');
   fallbackEl = container?.querySelector('#threeFallback');
   if (!containerEl) return;
+  if (!canvasEl) {
+    console.error('No se encontró el canvas threeCanvas dentro del contenedor 3D.');
+    showFallback('No se pudo inicializar la vista 3D. Falta el canvas dedicado.');
+    return;
+  }
   if (isReady) {
     onResize();
     return;
@@ -394,8 +408,8 @@ export function disposeScene() {
   if (renderer) {
     renderer.setAnimationLoop(null);
     renderer.dispose();
-    if (renderer.domElement?.parentElement) {
-      renderer.domElement.parentElement.removeChild(renderer.domElement);
+    if (typeof renderer.forceContextLoss === 'function') {
+      renderer.forceContextLoss();
     }
   }
   stationMeshes.clear();
@@ -411,4 +425,5 @@ export function disposeScene() {
   stationGroup = null;
   linkLine = null;
   isReady = false;
+  canvasEl = null;
 }

@@ -444,11 +444,15 @@ input[type="range"] {
   flex: 1;
 }
 
-#threeContainer canvas,
-#threeContainer .globe-canvas {
+.globe-canvas {
   width: 100% !important;
   height: 100% !important;
   display: block;
+}
+
+.globe-canvas.is-hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 #mapContainer {
