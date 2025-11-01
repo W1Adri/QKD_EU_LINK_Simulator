@@ -100,11 +100,59 @@ async function buildEarth() {
 }
 
 function setupRenderer() {
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  if (!containerEl) {
+    throw new Error('No existe contenedor para inicializar el renderizador.');
+  }
+
+  // Limpia cualquier canvas previo que pudiera haber quedado del fallback u otros intentos.
+  containerEl.querySelectorAll('canvas').forEach((canvas) => {
+    if (canvas.parentElement === containerEl) {
+      canvas.remove();
+    }
+  });
+
+  const canvas = document.createElement('canvas');
+  canvas.setAttribute('data-role', 'three-view');
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+
+  const contextAttributes = {
+    alpha: true,
+    antialias: true,
+    depth: true,
+    stencil: false,
+    preserveDrawingBuffer: false,
+    powerPreference: 'high-performance',
+  };
+
+  let gl = canvas.getContext('webgl2', contextAttributes);
+  if (!gl) {
+    gl = canvas.getContext('webgl', contextAttributes) || canvas.getContext('experimental-webgl', contextAttributes);
+  }
+
+  if (!gl) {
+    throw new Error('No se pudo obtener un contexto WebGL del canvas.');
+  }
+
+  renderer = new THREE.WebGLRenderer({
+    canvas,
+    context: gl,
+    antialias: true,
+    alpha: true,
+  });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.setPixelRatio(window.devicePixelRatio || 1);
   renderer.setClearColor(0x0f172a, 1);
-  containerEl.appendChild(renderer.domElement);
+
+  if (!canvas.parentElement) {
+    containerEl.appendChild(canvas);
+  }
+
+  canvas.addEventListener('webglcontextlost', (event) => {
+    event.preventDefault();
+    showFallback('Se perdió el contexto WebGL. Recarga la página para reiniciar la vista 3D.');
+    isReady = false;
+  });
 }
 
 function setupCamera() {
