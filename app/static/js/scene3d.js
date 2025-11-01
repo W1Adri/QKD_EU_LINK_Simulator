@@ -7,6 +7,65 @@ const EARTH_TEXTURE_URL = `${THREE_EXAMPLES_BASE}earth_atmos_2048.jpg`;
 const EARTH_SPECULAR_URL = `${THREE_EXAMPLES_BASE}earth_specular_2048.jpg`;
 const EARTH_BUMP_URL = `${THREE_EXAMPLES_BASE}earth_normal_2048.jpg`;
 
+const diagnostics = {
+  steps: [],
+  lastStep: null,
+  lastError: null,
+};
+
+function pushDiagnostics(entry) {
+  diagnostics.lastStep = { ...entry, timestamp: Date.now() };
+  diagnostics.steps.push(diagnostics.lastStep);
+  if (diagnostics.steps.length > 100) {
+    diagnostics.steps.shift();
+  }
+  if (typeof window !== 'undefined') {
+    window.__scene3dDiagnostics = diagnostics;
+  }
+}
+
+function recordStep(label, status, detail) {
+  pushDiagnostics({ label, status, detail });
+  const prefix = `[scene3d] ${label}`;
+  if (status === 'start') {
+    console.debug(`${prefix} → inicio`, detail || '');
+  } else if (status === 'ok') {
+    console.debug(`${prefix} ✓ completado`, detail || '');
+  } else if (status === 'skip') {
+    console.debug(`${prefix} ↷ omitido`, detail || '');
+  } else {
+    if (detail instanceof Error) {
+      diagnostics.lastError = {
+        step: detail.step || label,
+        message: detail.message,
+        stack: detail.stack,
+      };
+    }
+    console.error(`${prefix} ✖ error`, detail);
+  }
+}
+
+async function runStep(label, fn) {
+  recordStep(label, 'start');
+  try {
+    const result = await fn();
+    recordStep(label, 'ok', result);
+    return result;
+  } catch (error) {
+    const wrapped = error instanceof Error ? error : new Error(String(error || 'Error desconocido'));
+    if (!wrapped.step) {
+      wrapped.step = label;
+    }
+    diagnostics.lastError = {
+      step: wrapped.step,
+      message: wrapped.message,
+      stack: wrapped.stack,
+    };
+    recordStep(label, 'error', wrapped);
+    throw wrapped;
+  }
+}
+
 let THREE;
 let OrbitControls;
 let threePromise;
@@ -52,7 +111,22 @@ function loadTexture(url) {
   return new Promise((resolve, reject) => {
     const loader = new THREE.TextureLoader();
     loader.setCrossOrigin('anonymous');
-    loader.load(url, resolve, undefined, reject);
+    loader.load(
+      url,
+      (texture) => {
+        recordStep('Textura cargada', 'ok', { url });
+        resolve(texture);
+      },
+      undefined,
+      (error) => {
+        const reason =
+          error instanceof Error
+            ? error
+            : new Error(`Fallo al cargar textura ${url}`);
+        recordStep('Textura fallida', 'error', reason);
+        reject(error);
+      }
+    );
   });
 }
 
@@ -153,6 +227,12 @@ function setupRenderer() {
     showFallback('Se perdió el contexto WebGL. Recarga la página para reiniciar la vista 3D.');
     isReady = false;
   });
+
+  return {
+    width,
+    height,
+    contextType: gl instanceof WebGL2RenderingContext ? 'webgl2' : 'webgl',
+  };
 }
 
 function setupCamera() {
@@ -160,6 +240,7 @@ function setupCamera() {
   const height = Math.max(containerEl.clientHeight, 1);
   camera = new THREE.PerspectiveCamera(45, width / height, 0.01, 50);
   camera.position.set(0, 2.6, 4.4);
+  return { width, height, near: camera.near, far: camera.far };
 }
 
 function setupControls() {
@@ -172,6 +253,11 @@ function setupControls() {
   controls.rotateSpeed = 0.6;
   controls.zoomSpeed = 0.8;
   controls.target.set(0, 0, 0);
+  return {
+    minDistance: controls.minDistance,
+    maxDistance: controls.maxDistance,
+    rotateSpeed: controls.rotateSpeed,
+  };
 }
 
 function setupLights() {
@@ -181,6 +267,11 @@ function setupLights() {
   const rimLight = new THREE.DirectionalLight(0x7dd3fc, 0.4);
   rimLight.position.set(-3, -2, -4);
   scene.add(ambient, keyLight, rimLight);
+  return {
+    ambientIntensity: ambient.intensity,
+    keyPosition: keyLight.position.toArray(),
+    rimPosition: rimLight.position.toArray(),
+  };
 }
 
 function setupSceneGraph() {
@@ -208,6 +299,11 @@ function setupSceneGraph() {
   stationGroup = new THREE.Group();
 
   scene.add(orbitLine, linkLine, satelliteMesh, stationGroup);
+  return {
+    orbitMaterial: orbitLine.material.type,
+    linkMaterial: linkLine.material.type,
+    stationCount: stationGroup.children.length,
+  };
 }
 
 function onResize() {
@@ -217,6 +313,7 @@ function onResize() {
   renderer.setSize(width, height, false);
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
+  return { width, height };
 }
 
 function startRendering() {
@@ -231,6 +328,7 @@ function startRendering() {
     controls?.update();
     renderer.render(scene, camera);
   });
+  return { usingAnimationLoop: true };
 }
 
 function ensureStationMesh(station) {
@@ -269,17 +367,44 @@ function hideFallback() {
     canvasEl.classList.remove('is-hidden');
     canvasEl.setAttribute('aria-hidden', 'false');
   }
+  recordStep('Ocultar fallback', 'skip', 'Se muestra el lienzo 3D.');
 }
 
 function showFallback(message) {
   if (fallbackEl) {
-    fallbackEl.textContent = message || 'No se pudo inicializar la escena 3D.';
+    let finalMessage = message || 'No se pudo inicializar la escena 3D.';
+    if (diagnostics.lastError) {
+      const { step, message: errorMessage } = diagnostics.lastError;
+      const parts = [];
+      if (step) {
+        parts.push(`Paso: ${step}`);
+      }
+      if (errorMessage && (!message || !message.includes(errorMessage))) {
+        parts.push(`Detalle: ${errorMessage}`);
+      }
+      if (parts.length) {
+        finalMessage = `${finalMessage} (${parts.join(' | ')})`;
+      }
+    }
+    fallbackEl.textContent = finalMessage;
     fallbackEl.hidden = false;
   }
   if (canvasEl) {
     canvasEl.classList.add('is-hidden');
     canvasEl.setAttribute('aria-hidden', 'true');
   }
+  const fallbackError = (() => {
+    if (diagnostics.lastError) {
+      const error = new Error(diagnostics.lastError.message || message || 'Fallback activado');
+      error.step = diagnostics.lastError.step;
+      if (diagnostics.lastError.stack) {
+        error.stack = diagnostics.lastError.stack;
+      }
+      return error;
+    }
+    return new Error(message || 'Fallback activado');
+  })();
+  recordStep('Mostrar fallback', 'error', fallbackError);
 }
 
 export async function initScene(container) {
@@ -293,35 +418,49 @@ export async function initScene(container) {
     return;
   }
   if (isReady) {
+    recordStep('Init reutilizado', 'skip', 'La escena ya estaba lista.');
     onResize();
     return;
   }
 
   try {
-    await ensureThree();
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0f172a);
+    await runStep('Importar Three.js', ensureThree);
 
-    setupRenderer();
-    setupCamera();
-    setupControls();
-    setupLights();
+    await runStep('Crear escena', () => {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0f172a);
+    });
 
-    const earth = await buildEarth();
+    await runStep('Configurar renderizador', () => setupRenderer());
+    await runStep('Configurar cámara', () => setupCamera());
+    await runStep('Configurar controles', () => setupControls());
+    await runStep('Configurar luces', () => setupLights());
+
+    const earth = await runStep('Construir Tierra', () => buildEarth());
     scene.add(earth);
-    setupSceneGraph();
+    await runStep('Montar grafo de escena', () => setupSceneGraph());
 
-    onResize();
-    resizeObserver = new ResizeObserver(() => onResize());
-    resizeObserver.observe(containerEl);
-    window.addEventListener('resize', onResize);
+    await runStep('Ajustar tamaño inicial', () => onResize());
+    await runStep('Iniciar observadores', () => {
+      resizeObserver = new ResizeObserver(() => onResize());
+      resizeObserver.observe(containerEl);
+      window.addEventListener('resize', onResize);
+      return { resizeObserver: true };
+    });
 
     hideFallback();
-    startRendering();
+    await runStep('Iniciar renderizado', () => startRendering());
     isReady = true;
   } catch (error) {
     console.error('Error inicializando la vista 3D', error);
-    showFallback('No se pudo inicializar la vista 3D. Comprueba la compatibilidad WebGL.');
+    const messageParts = [];
+    if (error?.step) {
+      messageParts.push(`Fallo durante "${error.step}".`);
+    }
+    if (error?.message) {
+      messageParts.push(error.message);
+    }
+    showFallback(messageParts.join(' ') || 'No se pudo inicializar la vista 3D. Comprueba la compatibilidad WebGL.');
   }
 }
 
@@ -426,4 +565,5 @@ export function disposeScene() {
   linkLine = null;
   isReady = false;
   canvasEl = null;
+  recordStep('Dispose escena', 'skip', 'Recursos liberados.');
 }
