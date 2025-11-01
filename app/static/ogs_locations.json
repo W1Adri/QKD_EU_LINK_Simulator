@@ -1,1 +1,7 @@
-[]
+[
+  { "name": "Teide Observatory (ES)", "lat": 28.3, "lon": -16.509, "aperture_m": 1.0 },
+  { "name": "Matera Laser Ranging (IT)", "lat": 40.649, "lon": 16.704, "aperture_m": 1.5 },
+  { "name": "Observatoire de la Côte d’Azur (FR)", "lat": 43.754, "lon": 6.92, "aperture_m": 1.54 },
+  { "name": "Vienna Observatory (AT)", "lat": 48.248, "lon": 16.357, "aperture_m": 0.8 },
+  { "name": "Sodankylä Geophysical (FI)", "lat": 67.366, "lon": 26.633, "aperture_m": 1.0 }
+]
