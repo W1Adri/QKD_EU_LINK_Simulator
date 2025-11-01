@@ -1,29 +1,78 @@
 import { DEG2RAD } from './utils.js';
 
-let BABYLON;
-let engine;
+const THREE_CDN = 'https://unpkg.com/three@0.158.0/build/three.min.js';
+const CONTROLS_CDN = 'https://unpkg.com/three@0.158.0/examples/js/controls/OrbitControls.js';
+const DAYMAP_URL = 'https://cdn.jsdelivr.net/gh/pmndrs/drei-assets/textures/earth-day.jpg';
+const NIGHTMAP_URL = 'https://cdn.jsdelivr.net/gh/pmndrs/drei-assets/textures/earth-night.jpg';
+const SPECULAR_URL = 'https://cdn.jsdelivr.net/gh/pmndrs/drei-assets/textures/earth-specular.png';
+
+let THREE = null;
+let renderer;
 let scene;
 let camera;
+let controls;
 let orbitLine;
-let satelliteMesh;
 let linkLine;
+let orbitGeometry;
+let orbitMaterial;
+let linkGeometry;
+let linkMaterial;
+let satelliteMesh;
 let earthMesh;
 let atmosphereMesh;
-const stationMeshes = new Map();
+let animationId;
 let resizeObserver;
+let windowResizeHandler;
+const stationMeshes = new Map();
 
 const EARTH_RADIUS_UNITS = 1;
 const ALT_SCALE = 1 / 4000;
 
-async function ensureBabylon() {
-  if (BABYLON) return BABYLON;
-  try {
-    BABYLON = await import('https://cdn.jsdelivr.net/npm/babylonjs@6.18.0/+esm');
-    return BABYLON;
-  } catch (error) {
-    console.error('No se pudo cargar Babylon.js', error);
-    throw error;
+let threePromise;
+let controlsPromise;
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const existing = Array.from(document.getElementsByTagName('script')).find((script) => script.src === src);
+    if (existing && existing.dataset.loaded === 'true') {
+      resolve();
+      return;
+    }
+    const script = existing || document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.crossOrigin = 'anonymous';
+    script.onload = () => {
+      script.dataset.loaded = 'true';
+      resolve();
+    };
+    script.onerror = () => reject(new Error(`No se pudo cargar ${src}`));
+    if (!existing) document.head.appendChild(script);
+  });
+}
+
+async function ensureThree() {
+  if (THREE) return THREE;
+  if (!threePromise) {
+    threePromise = loadScript(THREE_CDN).then(() => {
+      THREE = window.THREE;
+      return THREE;
+    });
   }
+  await threePromise;
+  if (!THREE) throw new Error('THREE no disponible');
+  return THREE;
+}
+
+async function ensureControls() {
+  await ensureThree();
+  if (window.THREE?.OrbitControls) return window.THREE.OrbitControls;
+  if (!controlsPromise) {
+    controlsPromise = loadScript(CONTROLS_CDN);
+  }
+  await controlsPromise;
+  if (!window.THREE?.OrbitControls) throw new Error('OrbitControls no disponible');
+  return window.THREE.OrbitControls;
 }
 
 function latLonToVector(latDeg, lonDeg, altKm = 0) {
@@ -31,255 +80,325 @@ function latLonToVector(latDeg, lonDeg, altKm = 0) {
   const lon = lonDeg * DEG2RAD;
   const radius = EARTH_RADIUS_UNITS + altKm * ALT_SCALE;
   const cosLat = Math.cos(lat);
-  return new BABYLON.Vector3(
+  return new THREE.Vector3(
     radius * cosLat * Math.cos(lon),
     radius * Math.sin(lat),
     radius * cosLat * Math.sin(lon),
   );
 }
 
-function createEarth(sceneInstance) {
-  const material = new BABYLON.StandardMaterial('earthMat', sceneInstance);
-  material.diffuseTexture = new BABYLON.Texture(
-    'https://cdn.jsdelivr.net/gh/pmndrs/drei-assets/textures/earth-day.jpg',
-    sceneInstance,
-    true,
-    false,
-    BABYLON.Texture.BILINEAR_SAMPLINGMODE,
-  );
-  material.specularTexture = new BABYLON.Texture(
-    'https://cdn.jsdelivr.net/gh/pmndrs/drei-assets/textures/earth-specular.png',
-    sceneInstance,
-  );
-  material.emissiveTexture = new BABYLON.Texture(
-    'https://cdn.jsdelivr.net/gh/pmndrs/drei-assets/textures/earth-night.jpg',
-    sceneInstance,
-  );
-  material.emissiveColor = new BABYLON.Color3(0.3, 0.3, 0.35);
-  material.specularPower = 24;
-
-  const sphere = BABYLON.MeshBuilder.CreateSphere('earth', { diameter: EARTH_RADIUS_UNITS * 2, segments: 96 }, sceneInstance);
-  sphere.material = material;
-
-  const atmosphereMaterial = new BABYLON.StandardMaterial('atmosphere', sceneInstance);
-  atmosphereMaterial.diffuseColor = new BABYLON.Color3(0.5, 0.7, 1.0);
-  atmosphereMaterial.alpha = 0.12;
-  atmosphereMaterial.backFaceCulling = false;
-
-  const atmosphere = BABYLON.MeshBuilder.CreateSphere(
-    'atmosphere',
-    { diameter: EARTH_RADIUS_UNITS * 2 * 1.03, segments: 64 },
-    sceneInstance,
-  );
-  atmosphere.material = atmosphereMaterial;
-
-  return { sphere, atmosphere };
+function createRenderer(container) {
+  const canvas = document.createElement('canvas');
+  const rendererInstance = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+  rendererInstance.setPixelRatio(window.devicePixelRatio || 1);
+  rendererInstance.setSize(container.clientWidth, container.clientHeight, false);
+  container.appendChild(rendererInstance.domElement);
+  return rendererInstance;
 }
 
-function createSatellite(sceneInstance) {
-  const material = new BABYLON.StandardMaterial('satMat', sceneInstance);
-  material.diffuseColor = new BABYLON.Color3(1, 0.66, 0.28);
-  material.emissiveColor = new BABYLON.Color3(1, 0.54, 0.2);
-  const mesh = BABYLON.MeshBuilder.CreateSphere('satellite', { diameter: 0.05, segments: 24 }, sceneInstance);
-  mesh.material = material;
-  return mesh;
+function createEarthGroup() {
+  const loader = new THREE.TextureLoader();
+  loader.setCrossOrigin('anonymous');
+  const dayTexture = loader.load(DAYMAP_URL, (texture) => {
+    texture.colorSpace = THREE.SRGBColorSpace;
+  });
+  const nightTexture = loader.load(NIGHTMAP_URL, (texture) => {
+    texture.colorSpace = THREE.SRGBColorSpace;
+  });
+  const specularTexture = loader.load(SPECULAR_URL);
+  const material = new THREE.MeshPhongMaterial({
+    map: dayTexture,
+    emissiveMap: nightTexture,
+    emissive: new THREE.Color(0x111133),
+    specularMap: specularTexture,
+    shininess: 12,
+  });
+  const geometry = new THREE.SphereGeometry(EARTH_RADIUS_UNITS, 128, 128);
+  const mesh = new THREE.Mesh(geometry, material);
+
+  const atmosphereMaterial = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(0x6ab7ff),
+    transparent: true,
+    opacity: 0.14,
+    side: THREE.BackSide,
+    blending: THREE.AdditiveBlending,
+  });
+  const atmosphereGeometry = new THREE.SphereGeometry(EARTH_RADIUS_UNITS * 1.03, 128, 128);
+  const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
+
+  return { mesh, atmosphere };
 }
 
-function ensureLinkLine(points = [BABYLON.Vector3.Zero(), BABYLON.Vector3.Zero()]) {
-  if (!scene) return;
-  if (linkLine) {
-    BABYLON.MeshBuilder.CreateLines(null, { points, instance: linkLine });
-    return;
+function createSatelliteMesh() {
+  const geometry = new THREE.SphereGeometry(0.035, 24, 24);
+  const material = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(0xf97316),
+    emissive: new THREE.Color(0xffb347),
+    roughness: 0.35,
+    metalness: 0.1,
+  });
+  return new THREE.Mesh(geometry, material);
+}
+
+function ensureOrbitResources() {
+  if (!orbitGeometry) {
+    orbitGeometry = new THREE.BufferGeometry();
   }
-  linkLine = BABYLON.MeshBuilder.CreateLines(
-    'link',
-    { points, updatable: true },
-    scene,
-  );
-  linkLine.color = new BABYLON.Color3(0.22, 0.74, 0.97);
-  linkLine.alpha = 0.9;
-}
-
-function updateOrbitMesh(points) {
-  if (!scene) return;
-  if (orbitLine) {
-    orbitLine.dispose();
-    orbitLine = null;
+  if (!orbitMaterial) {
+    orbitMaterial = new THREE.LineBasicMaterial({ color: 0x7c3aed, linewidth: 2, transparent: true, opacity: 0.85 });
   }
-  orbitLine = BABYLON.MeshBuilder.CreateLines('orbit', { points }, scene);
-  orbitLine.color = new BABYLON.Color3(0.49, 0.23, 0.93);
-  orbitLine.alpha = 0.85;
+  if (!orbitLine) {
+    orbitLine = new THREE.Line(orbitGeometry, orbitMaterial);
+    orbitLine.frustumCulled = false;
+    scene.add(orbitLine);
+  }
 }
 
-function handleResize() {
-  if (!engine) return;
-  engine.resize();
+function ensureLinkResources() {
+  if (!linkGeometry) {
+    linkGeometry = new THREE.BufferGeometry();
+    linkGeometry.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(6), 3));
+  }
+  if (!linkMaterial) {
+    linkMaterial = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.9 });
+  }
+  if (!linkLine) {
+    linkLine = new THREE.Line(linkGeometry, linkMaterial);
+    linkLine.visible = false;
+    scene.add(linkLine);
+  }
+}
+
+function handleResize(container) {
+  if (!renderer || !camera) return;
+  const width = container.clientWidth || 1;
+  const height = container.clientHeight || 1;
+  renderer.setSize(width, height, false);
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+}
+
+function startRenderLoop(container) {
+  if (animationId) cancelAnimationFrame(animationId);
+  const animate = () => {
+    animationId = requestAnimationFrame(animate);
+    if (earthMesh) earthMesh.rotation.y += 0.0005;
+    if (atmosphereMesh) atmosphereMesh.rotation.y += 0.0007;
+    controls?.update();
+    renderer?.render(scene, camera);
+  };
+  handleResize(container);
+  animate();
 }
 
 export async function initScene(container) {
   if (!container) return null;
   const fallback = container.querySelector('#threeFallback');
   try {
-    await ensureBabylon();
+    await ensureThree();
+    await ensureControls();
   } catch (error) {
+    console.error(error);
     if (fallback) {
       fallback.hidden = false;
-      fallback.textContent = 'No se pudo cargar el motor 3D. Comprueba la conexión e inténtalo de nuevo.';
+      fallback.textContent = 'No se pudo inicializar la vista 3D. Comprueba tu conexión e inténtalo de nuevo.';
     }
     return null;
   }
 
   if (fallback) fallback.hidden = true;
 
-  let canvas = container.querySelector('canvas');
-  if (!canvas) {
-    canvas = document.createElement('canvas');
-    container.appendChild(canvas);
-  }
+  const existingCanvas = container.querySelector('canvas');
+  if (existingCanvas) existingCanvas.remove();
 
-  engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
-  scene = new BABYLON.Scene(engine);
-  scene.clearColor = new BABYLON.Color4(2 / 255, 6 / 255, 23 / 255, 1);
+  renderer = createRenderer(container);
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x020617);
 
-  camera = new BABYLON.ArcRotateCamera(
-    'camera',
-    -Math.PI / 2.2,
-    Math.PI / 2.4,
-    3.2,
-    BABYLON.Vector3.Zero(),
-    scene,
-  );
-  camera.lowerRadiusLimit = 1.4;
-  camera.upperRadiusLimit = 8;
-  camera.wheelPrecision = 80;
-  camera.panningSensibility = 0;
-  camera.attachControl(canvas, true);
+  camera = new THREE.PerspectiveCamera(48, container.clientWidth / container.clientHeight, 0.1, 100);
+  camera.position.set(0, 1.8, 3.2);
 
-  const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);
-  hemi.intensity = 0.7;
-  const sun = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(-1, -0.3, -1), scene);
-  sun.position = new BABYLON.Vector3(6, 3, 6);
-  sun.intensity = 1.2;
+  const OrbitControls = window.THREE.OrbitControls;
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.05;
+  controls.minDistance = 1.25;
+  controls.maxDistance = 7.5;
+  controls.enablePan = false;
+  controls.minPolarAngle = Math.PI * 0.1;
+  controls.maxPolarAngle = Math.PI - Math.PI * 0.08;
+  controls.target.set(0, 0, 0);
 
-  const { sphere, atmosphere } = createEarth(scene);
-  earthMesh = sphere;
+  const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+  const sun = new THREE.DirectionalLight(0xffffff, 1.1);
+  sun.position.set(5, 2.5, 4.5);
+  scene.add(ambient, sun);
+
+  const { mesh, atmosphere } = createEarthGroup();
+  earthMesh = mesh;
   atmosphereMesh = atmosphere;
+  atmosphereMesh.rotation.y = 0.05;
+  scene.add(earthMesh, atmosphereMesh);
 
-  satelliteMesh = createSatellite(scene);
-  satelliteMesh.position = new BABYLON.Vector3(0, EARTH_RADIUS_UNITS + 0.1, 0);
+  satelliteMesh = createSatelliteMesh();
+  scene.add(satelliteMesh);
 
-  ensureLinkLine();
+  ensureOrbitResources();
+  ensureLinkResources();
 
-  scene.onBeforeRenderObservable.add(() => {
-    if (earthMesh) earthMesh.rotate(BABYLON.Axis.Y, 0.0005);
-    if (atmosphereMesh) atmosphereMesh.rotate(BABYLON.Axis.Y, 0.0007);
-  });
+  if (!scene.getObjectByName('stationsGroup')) {
+    const group = new THREE.Group();
+    group.name = 'stationsGroup';
+    scene.add(group);
+  }
 
   if (typeof ResizeObserver !== 'undefined') {
-    if (!resizeObserver) {
-      resizeObserver = new ResizeObserver(() => handleResize());
-    }
+    resizeObserver?.disconnect();
+    resizeObserver = new ResizeObserver(() => handleResize(container));
     resizeObserver.observe(container);
   }
-  window.addEventListener('resize', handleResize);
+  windowResizeHandler = () => handleResize(container);
+  window.addEventListener('resize', windowResizeHandler);
 
-  engine.runRenderLoop(() => {
-    if (scene) scene.render();
-  });
-
-  handleResize();
+  startRenderLoop(container);
   return { scene, camera };
 }
 
 export function setTheme(theme) {
-  if (!scene || !BABYLON) return;
+  if (!scene || !THREE) return;
   if (theme === 'dark') {
-    scene.clearColor = new BABYLON.Color4(2 / 255, 6 / 255, 23 / 255, 1);
+    scene.background = new THREE.Color(0x020617);
   } else {
-    scene.clearColor = new BABYLON.Color4(0.94, 0.96, 0.99, 1);
+    scene.background = new THREE.Color(0xf0f4ff);
   }
 }
 
-export function updateOrbitPath(track) {
-  if (!scene || !BABYLON || !track?.length) return;
-  const points = track.map((point) => latLonToVector(point.lat, point.lon, point.alt ?? 0));
-  if (points.length > 1) {
-    points.push(points[0]);
-  }
-  updateOrbitMesh(points);
+export function updateOrbitPath(points) {
+  if (!scene || !THREE || !points?.length) return;
+  ensureOrbitResources();
+  const closedPoints = [...points, points[0]];
+  const positions = new Float32Array(closedPoints.length * 3);
+  closedPoints.forEach((point, index) => {
+    const vector = latLonToVector(point.lat, point.lon, point.alt);
+    positions[index * 3] = vector.x;
+    positions[index * 3 + 1] = vector.y;
+    positions[index * 3 + 2] = vector.z;
+  });
+  orbitGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  orbitGeometry.computeBoundingSphere();
 }
 
 export function updateSatellite(point) {
-  if (!satelliteMesh || !BABYLON || !point) return;
-  const position = latLonToVector(point.lat, point.lon, point.alt ?? 0);
-  satelliteMesh.position.copyFrom(position);
+  if (!satelliteMesh || !THREE || !point) return;
+  const vector = latLonToVector(point.lat, point.lon, point.alt);
+  satelliteMesh.position.copy(vector);
 }
 
-export function updateLink(satPoint, station) {
-  if (!BABYLON) return;
-  if (!satPoint || !station) {
-    ensureLinkLine([BABYLON.Vector3.Zero(), BABYLON.Vector3.Zero()]);
-    return;
+function stationsGroup() {
+  let group = scene?.getObjectByName('stationsGroup');
+  if (!group && scene) {
+    group = new THREE.Group();
+    group.name = 'stationsGroup';
+    scene.add(group);
   }
-  const sat = latLonToVector(satPoint.lat, satPoint.lon, satPoint.alt ?? 0);
-  const ground = latLonToVector(station.lat, station.lon, 0.01);
-  ensureLinkLine([ground, sat]);
+  return group;
 }
 
 export function renderStations(stations, selectedId) {
-  if (!scene || !BABYLON) return;
-  const activeIds = new Set();
+  if (!scene || !THREE) return;
+  const group = stationsGroup();
+  const newIds = new Set();
+
   stations.forEach((station) => {
-    activeIds.add(station.id);
+    newIds.add(station.id);
     if (!stationMeshes.has(station.id)) {
-      const mesh = BABYLON.MeshBuilder.CreateSphere(
-        `station-${station.id}`,
-        { diameter: 0.04, segments: 16 },
-        scene,
-      );
-      const mat = new BABYLON.StandardMaterial(`stationMat-${station.id}`, scene);
-      mesh.material = mat;
+      const geometry = new THREE.SphereGeometry(0.028, 20, 20);
+      const material = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(0x0ea5e9),
+        emissive: new THREE.Color(0x1d4ed8),
+        roughness: 0.4,
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.userData.stationId = station.id;
+      group.add(mesh);
       stationMeshes.set(station.id, mesh);
     }
     const mesh = stationMeshes.get(station.id);
-    const mat = mesh.material;
-    mesh.position = latLonToVector(station.lat, station.lon, 0.01);
+    const position = latLonToVector(station.lat, station.lon, 0.02);
+    mesh.position.copy(position);
+    const material = mesh.material;
     if (station.id === selectedId) {
-      mat.diffuseColor = new BABYLON.Color3(0.98, 0.84, 0.17);
-      mat.emissiveColor = new BABYLON.Color3(0.96, 0.76, 0.11);
+      material.color.set(0xfacc15);
+      material.emissive.set(0xfbbf24);
     } else {
-      mat.diffuseColor = new BABYLON.Color3(0.14, 0.65, 0.92);
-      mat.emissiveColor = new BABYLON.Color3(0.09, 0.55, 0.85);
+      material.color.set(0x0ea5e9);
+      material.emissive.set(0x1d4ed8);
     }
   });
 
-  Array.from(stationMeshes.entries()).forEach(([id, mesh]) => {
-    if (!activeIds.has(id)) {
-      mesh.dispose();
+  Array.from(stationMeshes.keys()).forEach((id) => {
+    if (!newIds.has(id)) {
+      const mesh = stationMeshes.get(id);
+      mesh?.parent?.remove(mesh);
+      mesh?.geometry?.dispose();
+      mesh?.material?.dispose();
       stationMeshes.delete(id);
     }
   });
 }
 
-export function disposeScene() {
-  if (resizeObserver) {
-    resizeObserver.disconnect();
-    resizeObserver = null;
+export function updateLink(point, station) {
+  if (!scene || !THREE) return;
+  ensureLinkResources();
+  if (!station || !point) {
+    linkLine.visible = false;
+    return;
   }
-  window.removeEventListener('resize', handleResize);
-  stationMeshes.forEach((mesh) => mesh.dispose());
+  const sat = latLonToVector(point.lat, point.lon, point.alt);
+  const ground = latLonToVector(station.lat, station.lon, 0.02);
+  const array = linkGeometry.attributes.position.array;
+  array[0] = ground.x;
+  array[1] = ground.y;
+  array[2] = ground.z;
+  array[3] = sat.x;
+  array[4] = sat.y;
+  array[5] = sat.z;
+  linkGeometry.attributes.position.needsUpdate = true;
+  linkGeometry.computeBoundingSphere();
+  linkLine.visible = true;
+}
+
+export function disposeScene() {
+  cancelAnimationFrame(animationId);
+  resizeObserver?.disconnect();
+  if (windowResizeHandler) {
+    window.removeEventListener('resize', windowResizeHandler);
+    windowResizeHandler = null;
+  }
+  stationMeshes.forEach((mesh) => {
+    mesh.parent?.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  });
   stationMeshes.clear();
-  orbitLine?.dispose();
-  linkLine?.dispose();
-  satelliteMesh?.dispose();
-  earthMesh?.dispose();
-  atmosphereMesh?.dispose();
-  engine?.dispose();
-  engine = null;
+  orbitGeometry?.dispose();
+  orbitMaterial?.dispose();
+  linkGeometry?.dispose();
+  linkMaterial?.dispose();
+  if (renderer?.domElement?.parentElement) {
+    renderer.domElement.parentElement.removeChild(renderer.domElement);
+  }
+  renderer?.dispose();
   scene = null;
+  renderer = null;
   camera = null;
+  controls = null;
   orbitLine = null;
   linkLine = null;
+  orbitGeometry = null;
+  orbitMaterial = null;
+  linkGeometry = null;
+  linkMaterial = null;
   satelliteMesh = null;
   earthMesh = null;
   atmosphereMesh = null;

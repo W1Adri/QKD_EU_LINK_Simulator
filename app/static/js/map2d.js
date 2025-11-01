@@ -78,6 +78,7 @@ export function setBaseLayer(mode) {
   baseLayers[currentBase]?.removeFrom(map);
   baseLayers[mode].addTo(map);
   currentBase = mode;
+  map.invalidateSize();
 }
 
 export function toggleBaseLayer() {

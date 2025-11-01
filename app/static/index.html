@@ -24,7 +24,7 @@
     </header>
 
     <main class="workspace">
-      <aside id="controlPanel" class="control-panel" data-collapsed="false">
+      <aside id="controlPanel" class="control-panel" data-collapsed="false" aria-expanded="true">
         <nav class="panel-tabs" aria-label="Secciones de configuración">
           <button type="button" class="is-active" data-section-target="orbit">Órbita</button>
           <button type="button" data-section-target="resonance">Resonancia</button>
@@ -159,6 +159,8 @@
           </section>
         </div>
       </aside>
+
+      <div id="panelResizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-controls="controlPanel" aria-label="Ajustar anchura del panel" tabindex="0"></div>
 
       <section class="visual-area">
         <button id="panelReveal" class="panel-reveal" type="button" hidden>Mostrar controles</button>

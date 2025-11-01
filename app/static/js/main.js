@@ -53,6 +53,12 @@ let currentMapStyle = 'standard';
 let lastOrbitSignature = '';
 let lastMetricsSignature = '';
 let playingRaf = null;
+let panelWidth = 360;
+let lastExpandedPanelWidth = 360;
+
+const PANEL_MIN_WIDTH = 240;
+const PANEL_MAX_WIDTH = 520;
+const PANEL_COLLAPSE_THRESHOLD = 280;
 
 function cacheElements() {
   const ids = [
@@ -62,7 +68,7 @@ function cacheElements() {
     'satAperture', 'satApertureSlider', 'groundAperture', 'groundApertureSlider', 'wavelength',
     'wavelengthSlider', 'samplesPerOrbit', 'samplesPerOrbitSlider', 'timeSlider', 'btnPlay', 'btnPause',
     'btnStepBack', 'btnStepForward', 'btnResetTime', 'timeWarp', 'btnTheme', 'btnPanelToggle',
-    'btnMapStyle', 'panelReveal', 'stationSelect', 'btnAddStation', 'btnFocusStation', 'timeLabel',
+    'btnMapStyle', 'panelReveal', 'panelResizer', 'stationSelect', 'btnAddStation', 'btnFocusStation', 'timeLabel',
     'elevationLabel', 'lossLabel', 'distanceMetric', 'elevationMetric', 'zenithMetric', 'lossMetric',
     'dopplerMetric', 'threeContainer', 'mapContainer', 'chartLoss', 'chartElevation', 'chartDistance',
     'stationDialog', 'stationName', 'stationLat', 'stationLon', 'stationAperture', 'stationSave',
@@ -96,15 +102,39 @@ function activatePanelSection(sectionId) {
 
 function setPanelCollapsed(collapsed) {
   if (!elements.controlPanel || !elements.workspace) return;
+  const isAlreadyCollapsed = elements.controlPanel.dataset.collapsed === 'true';
+  if (collapsed && !isAlreadyCollapsed) {
+    const rect = elements.controlPanel.getBoundingClientRect();
+    panelWidth = rect.width;
+    if (panelWidth >= PANEL_COLLAPSE_THRESHOLD) {
+      lastExpandedPanelWidth = panelWidth;
+    }
+  }
+  if (!collapsed && isAlreadyCollapsed) {
+    applyPanelWidth(lastExpandedPanelWidth || panelWidth || 360);
+  }
   elements.controlPanel.dataset.collapsed = collapsed ? 'true' : 'false';
   elements.workspace.classList.toggle('panel-collapsed', collapsed);
   if (elements.btnPanelToggle) {
     elements.btnPanelToggle.textContent = collapsed ? 'Mostrar panel' : 'Ocultar panel';
+    elements.btnPanelToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
   }
+  elements.controlPanel.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
   if (elements.panelReveal) {
     elements.panelReveal.hidden = !collapsed;
   }
+  if (elements.panelResizer) {
+    elements.panelResizer.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
+    elements.panelResizer.tabIndex = collapsed ? -1 : 0;
+  }
   setTimeout(() => invalidateMap(), 250);
+}
+
+function applyPanelWidth(width) {
+  panelWidth = clamp(width, PANEL_MIN_WIDTH, PANEL_MAX_WIDTH);
+  if (elements.controlPanel) {
+    elements.controlPanel.style.setProperty('--panel-width', `${panelWidth}px`);
+  }
 }
 
 function applyTheme(theme) {
@@ -164,6 +194,12 @@ function initDefaults() {
       draft.epoch = preset;
     });
   }
+  if (elements.controlPanel) {
+    const rect = elements.controlPanel.getBoundingClientRect();
+    panelWidth = rect.width;
+    lastExpandedPanelWidth = rect.width;
+    applyPanelWidth(rect.width);
+  }
   if (elements.timeSlider) {
     elements.timeSlider.min = 0;
     elements.timeSlider.max = 1;
@@ -181,6 +217,7 @@ function initDefaults() {
   updateMapStyleButton(currentMapStyle);
   updateResonanceUI(state.resonance.enabled);
   activatePanelSection('orbit');
+  setPanelCollapsed(false);
   if (elements.panelReveal) {
     elements.panelReveal.hidden = true;
   }
@@ -231,6 +268,58 @@ function bindEvents() {
   });
 
   elements.panelReveal?.addEventListener('click', () => setPanelCollapsed(false));
+
+  elements.panelResizer?.addEventListener('pointerdown', (event) => {
+    if (!elements.controlPanel) return;
+    if (elements.controlPanel.dataset.collapsed === 'true') {
+      setPanelCollapsed(false);
+      return;
+    }
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = elements.controlPanel.getBoundingClientRect().width;
+    const handleMove = (moveEvent) => {
+      const width = startWidth + (moveEvent.clientX - startX);
+      applyPanelWidth(width);
+    };
+    const handleUp = () => {
+      document.removeEventListener('pointermove', handleMove);
+      if (panelWidth < PANEL_COLLAPSE_THRESHOLD) {
+        lastExpandedPanelWidth = Math.max(startWidth, PANEL_MIN_WIDTH);
+        setPanelCollapsed(true);
+      } else {
+        lastExpandedPanelWidth = panelWidth;
+      }
+    };
+    document.addEventListener('pointermove', handleMove);
+    document.addEventListener('pointerup', handleUp, { once: true });
+    document.addEventListener('pointercancel', handleUp, { once: true });
+  });
+
+  elements.panelResizer?.addEventListener('dblclick', () => {
+    const collapsed = elements.controlPanel?.dataset.collapsed === 'true';
+    setPanelCollapsed(!collapsed);
+  });
+
+  elements.panelResizer?.addEventListener('keydown', (event) => {
+    if (!elements.controlPanel) return;
+    const collapsed = elements.controlPanel.dataset.collapsed === 'true';
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      setPanelCollapsed(!collapsed);
+      return;
+    }
+    if (collapsed) return;
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      applyPanelWidth(panelWidth - 20);
+      lastExpandedPanelWidth = panelWidth;
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      applyPanelWidth(panelWidth + 20);
+      lastExpandedPanelWidth = panelWidth;
+    }
+  });
 
   elements.btnMapStyle?.addEventListener('click', () => {
     const next = toggleBaseLayer();
