@@ -1,227 +1,286 @@
 import { DEG2RAD } from './utils.js';
 
-let THREE;
-let OrbitControls;
-
-let renderer;
+let BABYLON;
+let engine;
 let scene;
 let camera;
-let controls;
-let animationId;
 let orbitLine;
 let satelliteMesh;
 let linkLine;
-let earthGroup;
+let earthMesh;
+let atmosphereMesh;
 const stationMeshes = new Map();
+let resizeObserver;
 
 const EARTH_RADIUS_UNITS = 1;
-const ALT_SCALE = 1 / 4000; // scales km to scene units
+const ALT_SCALE = 1 / 4000;
 
-async function ensureThree() {
-  if (THREE) return;
+async function ensureBabylon() {
+  if (BABYLON) return BABYLON;
   try {
-    const module = await import('three');
-    const controlsModule = await import('three/examples/controls/OrbitControls.js');
-    THREE = module;
-    OrbitControls = controlsModule.OrbitControls;
+    BABYLON = await import('https://cdn.jsdelivr.net/npm/babylonjs@6.18.0/+esm');
+    return BABYLON;
   } catch (error) {
-    console.error('No se pudo cargar Three.js', error);
+    console.error('No se pudo cargar Babylon.js', error);
     throw error;
   }
 }
 
-function latLonToCartesian(latDeg, lonDeg, altKm = 0) {
+function latLonToVector(latDeg, lonDeg, altKm = 0) {
   const lat = latDeg * DEG2RAD;
   const lon = lonDeg * DEG2RAD;
   const radius = EARTH_RADIUS_UNITS + altKm * ALT_SCALE;
   const cosLat = Math.cos(lat);
-  return new THREE.Vector3(
+  return new BABYLON.Vector3(
     radius * cosLat * Math.cos(lon),
     radius * Math.sin(lat),
     radius * cosLat * Math.sin(lon),
   );
 }
 
-function buildEarth() {
-  const group = new THREE.Group();
-  const geometry = new THREE.SphereGeometry(EARTH_RADIUS_UNITS, 64, 64);
-  const textureLoader = new THREE.TextureLoader();
-  const material = new THREE.MeshPhongMaterial({
-    map: textureLoader.load('https://cdn.jsdelivr.net/gh/pmndrs/drei-assets/textures/earth-day.jpg'),
-    specularMap: textureLoader.load('https://cdn.jsdelivr.net/gh/pmndrs/drei-assets/textures/earth-specular.png'),
-    normalMap: textureLoader.load('https://cdn.jsdelivr.net/gh/pmndrs/drei-assets/textures/earth-normal.png'),
-    shininess: 12,
-  });
-  const earth = new THREE.Mesh(geometry, material);
-  const atmosphere = new THREE.Mesh(
-    new THREE.SphereGeometry(EARTH_RADIUS_UNITS * 1.02, 64, 64),
-    new THREE.MeshPhongMaterial({ color: 0x4f46e5, opacity: 0.18, transparent: true }),
+function createEarth(sceneInstance) {
+  const material = new BABYLON.StandardMaterial('earthMat', sceneInstance);
+  material.diffuseTexture = new BABYLON.Texture(
+    'https://cdn.jsdelivr.net/gh/pmndrs/drei-assets/textures/earth-day.jpg',
+    sceneInstance,
+    true,
+    false,
+    BABYLON.Texture.BILINEAR_SAMPLINGMODE,
   );
-  group.add(earth);
-  group.add(atmosphere);
-  return group;
+  material.specularTexture = new BABYLON.Texture(
+    'https://cdn.jsdelivr.net/gh/pmndrs/drei-assets/textures/earth-specular.png',
+    sceneInstance,
+  );
+  material.emissiveTexture = new BABYLON.Texture(
+    'https://cdn.jsdelivr.net/gh/pmndrs/drei-assets/textures/earth-night.jpg',
+    sceneInstance,
+  );
+  material.emissiveColor = new BABYLON.Color3(0.3, 0.3, 0.35);
+  material.specularPower = 24;
+
+  const sphere = BABYLON.MeshBuilder.CreateSphere('earth', { diameter: EARTH_RADIUS_UNITS * 2, segments: 96 }, sceneInstance);
+  sphere.material = material;
+
+  const atmosphereMaterial = new BABYLON.StandardMaterial('atmosphere', sceneInstance);
+  atmosphereMaterial.diffuseColor = new BABYLON.Color3(0.5, 0.7, 1.0);
+  atmosphereMaterial.alpha = 0.12;
+  atmosphereMaterial.backFaceCulling = false;
+
+  const atmosphere = BABYLON.MeshBuilder.CreateSphere(
+    'atmosphere',
+    { diameter: EARTH_RADIUS_UNITS * 2 * 1.03, segments: 64 },
+    sceneInstance,
+  );
+  atmosphere.material = atmosphereMaterial;
+
+  return { sphere, atmosphere };
 }
 
-function buildSatellite() {
-  const geometry = new THREE.SphereGeometry(0.015, 24, 24);
-  const material = new THREE.MeshStandardMaterial({ color: 0xffa94d, emissive: 0xffb347, emissiveIntensity: 0.6 });
-  return new THREE.Mesh(geometry, material);
+function createSatellite(sceneInstance) {
+  const material = new BABYLON.StandardMaterial('satMat', sceneInstance);
+  material.diffuseColor = new BABYLON.Color3(1, 0.66, 0.28);
+  material.emissiveColor = new BABYLON.Color3(1, 0.54, 0.2);
+  const mesh = BABYLON.MeshBuilder.CreateSphere('satellite', { diameter: 0.05, segments: 24 }, sceneInstance);
+  mesh.material = material;
+  return mesh;
 }
 
-function buildOrbitLine() {
-  const geometry = new THREE.BufferGeometry();
-  const material = new THREE.LineDashedMaterial({ color: 0x7c3aed, linewidth: 1, dashSize: 0.04, gapSize: 0.02 });
-  return new THREE.Line(geometry, material);
-}
-
-function buildLinkLine() {
-  const geometry = new THREE.BufferGeometry();
-  const material = new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 1 });
-  return new THREE.Line(geometry, material);
-}
-
-function animate() {
-  animationId = requestAnimationFrame(animate);
-  if (earthGroup) {
-    earthGroup.rotation.y += 0.0004;
+function ensureLinkLine(points = [BABYLON.Vector3.Zero(), BABYLON.Vector3.Zero()]) {
+  if (!scene) return;
+  if (linkLine) {
+    BABYLON.MeshBuilder.CreateLines(null, { points, instance: linkLine });
+    return;
   }
-  if (controls) controls.update();
-  renderer.render(scene, camera);
+  linkLine = BABYLON.MeshBuilder.CreateLines(
+    'link',
+    { points, updatable: true },
+    scene,
+  );
+  linkLine.color = new BABYLON.Color3(0.22, 0.74, 0.97);
+  linkLine.alpha = 0.9;
 }
 
-function handleResize(container) {
-  const { clientWidth, clientHeight } = container;
-  camera.aspect = clientWidth / clientHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(clientWidth, clientHeight);
+function updateOrbitMesh(points) {
+  if (!scene) return;
+  if (orbitLine) {
+    orbitLine.dispose();
+    orbitLine = null;
+  }
+  orbitLine = BABYLON.MeshBuilder.CreateLines('orbit', { points }, scene);
+  orbitLine.color = new BABYLON.Color3(0.49, 0.23, 0.93);
+  orbitLine.alpha = 0.85;
+}
+
+function handleResize() {
+  if (!engine) return;
+  engine.resize();
 }
 
 export async function initScene(container) {
   if (!container) return null;
+  const fallback = container.querySelector('#threeFallback');
   try {
-    await ensureThree();
+    await ensureBabylon();
   } catch (error) {
-    container.innerHTML = '<div class="three-error">No se pudo inicializar la vista 3D.</div>';
+    if (fallback) {
+      fallback.hidden = false;
+      fallback.textContent = 'No se pudo cargar el motor 3D. Comprueba la conexión e inténtalo de nuevo.';
+    }
     return null;
   }
 
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setPixelRatio(window.devicePixelRatio);
-  renderer.setSize(container.clientWidth, container.clientHeight);
-  renderer.setClearColor(0x020617, 1);
-  container.appendChild(renderer.domElement);
+  if (fallback) fallback.hidden = true;
 
-  scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x020617, 0.65);
+  let canvas = container.querySelector('canvas');
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    container.appendChild(canvas);
+  }
 
-  camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
-  camera.position.set(2.4, 1.6, 2.4);
+  engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
+  scene = new BABYLON.Scene(engine);
+  scene.clearColor = new BABYLON.Color4(2 / 255, 6 / 255, 23 / 255, 1);
 
-  controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.05;
-  controls.minDistance = 1.4;
-  controls.maxDistance = 8;
+  camera = new BABYLON.ArcRotateCamera(
+    'camera',
+    -Math.PI / 2.2,
+    Math.PI / 2.4,
+    3.2,
+    BABYLON.Vector3.Zero(),
+    scene,
+  );
+  camera.lowerRadiusLimit = 1.4;
+  camera.upperRadiusLimit = 8;
+  camera.wheelPrecision = 80;
+  camera.panningSensibility = 0;
+  camera.attachControl(canvas, true);
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.55);
-  const directional = new THREE.DirectionalLight(0xffffff, 0.8);
-  directional.position.set(5, 3, 5);
+  const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);
+  hemi.intensity = 0.7;
+  const sun = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(-1, -0.3, -1), scene);
+  sun.position = new BABYLON.Vector3(6, 3, 6);
+  sun.intensity = 1.2;
 
-  earthGroup = buildEarth();
-  orbitLine = buildOrbitLine();
-  satelliteMesh = buildSatellite();
-  linkLine = buildLinkLine();
-  orbitLine.computeLineDistances();
+  const { sphere, atmosphere } = createEarth(scene);
+  earthMesh = sphere;
+  atmosphereMesh = atmosphere;
 
-  scene.add(ambient, directional, earthGroup, orbitLine, satelliteMesh, linkLine);
+  satelliteMesh = createSatellite(scene);
+  satelliteMesh.position = new BABYLON.Vector3(0, EARTH_RADIUS_UNITS + 0.1, 0);
 
-  window.addEventListener('resize', () => handleResize(container));
-  handleResize(container);
-  animate();
+  ensureLinkLine();
+
+  scene.onBeforeRenderObservable.add(() => {
+    if (earthMesh) earthMesh.rotate(BABYLON.Axis.Y, 0.0005);
+    if (atmosphereMesh) atmosphereMesh.rotate(BABYLON.Axis.Y, 0.0007);
+  });
+
+  if (typeof ResizeObserver !== 'undefined') {
+    if (!resizeObserver) {
+      resizeObserver = new ResizeObserver(() => handleResize());
+    }
+    resizeObserver.observe(container);
+  }
+  window.addEventListener('resize', handleResize);
+
+  engine.runRenderLoop(() => {
+    if (scene) scene.render();
+  });
+
+  handleResize();
   return { scene, camera };
 }
 
 export function setTheme(theme) {
-  if (!renderer) return;
+  if (!scene || !BABYLON) return;
   if (theme === 'dark') {
-    renderer.setClearColor(0x020617, 1);
+    scene.clearColor = new BABYLON.Color4(2 / 255, 6 / 255, 23 / 255, 1);
   } else {
-    renderer.setClearColor(0xf1f5f9, 1);
+    scene.clearColor = new BABYLON.Color4(0.94, 0.96, 0.99, 1);
   }
 }
 
 export function updateOrbitPath(track) {
-  if (!orbitLine) return;
-  if (!track?.length) return;
-  const points = track.map((point) => latLonToCartesian(point.lat, point.lon, point.alt ?? 0));
-  const positions = new Float32Array(points.length * 3);
-  points.forEach((vec, idx) => {
-    positions[idx * 3] = vec.x;
-    positions[idx * 3 + 1] = vec.y;
-    positions[idx * 3 + 2] = vec.z;
-  });
-  orbitLine.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  orbitLine.geometry.computeBoundingSphere();
-  orbitLine.computeLineDistances();
+  if (!scene || !BABYLON || !track?.length) return;
+  const points = track.map((point) => latLonToVector(point.lat, point.lon, point.alt ?? 0));
+  if (points.length > 1) {
+    points.push(points[0]);
+  }
+  updateOrbitMesh(points);
 }
 
 export function updateSatellite(point) {
-  if (!satelliteMesh) return;
-  const pos = latLonToCartesian(point.lat, point.lon, point.alt);
-  satelliteMesh.position.copy(pos);
+  if (!satelliteMesh || !BABYLON || !point) return;
+  const position = latLonToVector(point.lat, point.lon, point.alt ?? 0);
+  satelliteMesh.position.copyFrom(position);
 }
 
 export function updateLink(satPoint, station) {
-  if (!linkLine) return;
-  if (!station) {
-    linkLine.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(), 3));
+  if (!BABYLON) return;
+  if (!satPoint || !station) {
+    ensureLinkLine([BABYLON.Vector3.Zero(), BABYLON.Vector3.Zero()]);
     return;
   }
-  const sat = latLonToCartesian(satPoint.lat, satPoint.lon, satPoint.alt);
-  const gs = latLonToCartesian(station.lat, station.lon, 0.01);
-  const positions = new Float32Array([
-    gs.x, gs.y, gs.z,
-    sat.x, sat.y, sat.z,
-  ]);
-  linkLine.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  linkLine.geometry.computeBoundingSphere();
+  const sat = latLonToVector(satPoint.lat, satPoint.lon, satPoint.alt ?? 0);
+  const ground = latLonToVector(station.lat, station.lon, 0.01);
+  ensureLinkLine([ground, sat]);
 }
 
 export function renderStations(stations, selectedId) {
-  if (!scene || !THREE) return;
-  const existingIds = new Set();
+  if (!scene || !BABYLON) return;
+  const activeIds = new Set();
   stations.forEach((station) => {
-    existingIds.add(station.id);
+    activeIds.add(station.id);
     if (!stationMeshes.has(station.id)) {
-      const geom = new THREE.SphereGeometry(0.012, 16, 16);
-      const mat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0ea5e9, emissiveIntensity: 0.4 });
-      const mesh = new THREE.Mesh(geom, mat);
+      const mesh = BABYLON.MeshBuilder.CreateSphere(
+        `station-${station.id}`,
+        { diameter: 0.04, segments: 16 },
+        scene,
+      );
+      const mat = new BABYLON.StandardMaterial(`stationMat-${station.id}`, scene);
+      mesh.material = mat;
       stationMeshes.set(station.id, mesh);
-      scene.add(mesh);
     }
     const mesh = stationMeshes.get(station.id);
-    const pos = latLonToCartesian(station.lat, station.lon, 0.01);
-    mesh.position.copy(pos);
-    mesh.material.color.set(station.id === selectedId ? 0xfacc15 : 0x38bdf8);
-    mesh.material.emissiveIntensity = station.id === selectedId ? 0.7 : 0.3;
+    const mat = mesh.material;
+    mesh.position = latLonToVector(station.lat, station.lon, 0.01);
+    if (station.id === selectedId) {
+      mat.diffuseColor = new BABYLON.Color3(0.98, 0.84, 0.17);
+      mat.emissiveColor = new BABYLON.Color3(0.96, 0.76, 0.11);
+    } else {
+      mat.diffuseColor = new BABYLON.Color3(0.14, 0.65, 0.92);
+      mat.emissiveColor = new BABYLON.Color3(0.09, 0.55, 0.85);
+    }
   });
 
-  Array.from(stationMeshes.keys()).forEach((id) => {
-    if (!existingIds.has(id)) {
-      const mesh = stationMeshes.get(id);
-      scene.remove(mesh);
+  Array.from(stationMeshes.entries()).forEach(([id, mesh]) => {
+    if (!activeIds.has(id)) {
+      mesh.dispose();
       stationMeshes.delete(id);
     }
   });
 }
 
-export function dispose() {
-  cancelAnimationFrame(animationId);
-  if (renderer) {
-    renderer.dispose();
+export function disposeScene() {
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+    resizeObserver = null;
   }
-  if (scene) {
-    scene.clear();
-  }
+  window.removeEventListener('resize', handleResize);
+  stationMeshes.forEach((mesh) => mesh.dispose());
   stationMeshes.clear();
+  orbitLine?.dispose();
+  linkLine?.dispose();
+  satelliteMesh?.dispose();
+  earthMesh?.dispose();
+  atmosphereMesh?.dispose();
+  engine?.dispose();
+  engine = null;
+  scene = null;
+  camera = null;
+  orbitLine = null;
+  linkLine = null;
+  satelliteMesh = null;
+  earthMesh = null;
+  atmosphereMesh = null;
 }

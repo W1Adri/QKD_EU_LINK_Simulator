@@ -22,6 +22,9 @@ import {
   focusOnStation,
   flyToOrbit,
   annotateStationTooltip,
+  toggleBaseLayer,
+  setBaseLayer,
+  invalidateSize as invalidateMap,
 } from './map2d.js';
 import {
   initScene,
@@ -45,10 +48,11 @@ import {
 const { EARTH_RADIUS_KM } = orbitConstants;
 
 const elements = {};
+let mapInstance;
+let currentMapStyle = 'standard';
 let lastOrbitSignature = '';
 let lastMetricsSignature = '';
 let playingRaf = null;
-let mapInstance;
 
 function cacheElements() {
   const ids = [
@@ -57,94 +61,50 @@ function cacheElements() {
     'meanAnomaly', 'meanAnomalySlider', 'resonanceToggle', 'resonanceOrbits', 'resonanceRotations',
     'satAperture', 'satApertureSlider', 'groundAperture', 'groundApertureSlider', 'wavelength',
     'wavelengthSlider', 'samplesPerOrbit', 'samplesPerOrbitSlider', 'timeSlider', 'btnPlay', 'btnPause',
-    'btnStepBack', 'btnStepForward', 'btnResetTime', 'timeWarp', 'btnTheme', 'btnTogglePanels',
-    'stationSelect', 'btnAddStation', 'btnFocusStation', 'timeLabel', 'elevationLabel', 'lossLabel',
-    'distanceMetric', 'elevationMetric', 'zenithMetric', 'lossMetric', 'dopplerMetric',
-    'threeContainer', 'mapContainer', 'chartLoss', 'chartElevation', 'chartDistance', 'stationDialog',
-    'stationName', 'stationLat', 'stationLon', 'stationAperture', 'stationSave',
+    'btnStepBack', 'btnStepForward', 'btnResetTime', 'timeWarp', 'btnTheme', 'btnPanelToggle',
+    'btnMapStyle', 'panelReveal', 'stationSelect', 'btnAddStation', 'btnFocusStation', 'timeLabel',
+    'elevationLabel', 'lossLabel', 'distanceMetric', 'elevationMetric', 'zenithMetric', 'lossMetric',
+    'dopplerMetric', 'threeContainer', 'mapContainer', 'chartLoss', 'chartElevation', 'chartDistance',
+    'stationDialog', 'stationName', 'stationLat', 'stationLon', 'stationAperture', 'stationSave',
   ];
   ids.forEach((id) => {
     elements[id] = document.getElementById(id);
   });
-  elements.variantLinks = document.querySelectorAll('.variant-picker a');
-  elements.viewTabs = document.querySelectorAll('[data-view]');
-  elements.viewGrid = document.querySelector('[data-view-container]');
   elements.workspace = document.querySelector('.workspace');
-  elements.drawerHandles = document.querySelectorAll('.drawer-handle');
-  elements.drawerMenuItems = document.querySelectorAll('.drawer-menu-item');
-  elements.drawerPanels = document.querySelectorAll('[data-panel]');
+  elements.controlPanel = document.getElementById('controlPanel');
+  elements.panelTabs = document.querySelectorAll('.panel-tabs [data-section-target]');
+  elements.panelSections = document.querySelectorAll('.panel-section');
+  elements.viewTabs = document.querySelectorAll('[data-view]');
+  elements.viewGrid = document.getElementById('viewGrid');
+  elements.resonanceHint = document.querySelector('[data-section="resonance"] .hint');
 }
 
-function getPanelElement(panelId) {
-  if (!panelId) return null;
-  return document.querySelector(`[data-panel="${panelId}"]`);
-}
-
-function updateDrawerHandle(panel, collapsed) {
-  if (!panel) return;
-  const handle = panel.querySelector('.drawer-handle');
-  if (!handle) return;
-  const isPrimary = panel.dataset.panel === 'primary';
-  const icon = handle.querySelector('.icon');
-  const expandedIcon = isPrimary ? '◀' : '▶';
-  const collapsedIcon = isPrimary ? '▶' : '◀';
-  handle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-  if (icon) {
-    icon.textContent = collapsed ? collapsedIcon : expandedIcon;
-  }
-}
-
-function setPanelCollapsed(panelId, collapsed) {
-  const panel = getPanelElement(panelId);
-  if (!panel) return;
-  panel.dataset.collapsed = collapsed ? 'true' : 'false';
-  updateDrawerHandle(panel, collapsed);
-  if (!elements.workspace) return;
-  const className = panelId === 'secondary' ? 'is-secondary-collapsed' : 'is-primary-collapsed';
-  elements.workspace.classList.toggle(className, collapsed);
-}
-
-function activateDrawerSection(panelId, requestedSectionId) {
-  const panel = getPanelElement(panelId);
-  if (!panel) return;
-  const items = panel.querySelectorAll('.drawer-menu-item');
-  const hasSection = (sectionId) => !!panel.querySelector(`.drawer-content [data-section="${sectionId}"]`);
-  let sectionId = requestedSectionId;
-  if (!sectionId || !hasSection(sectionId)) {
-    sectionId = items[0]?.dataset.sectionTarget;
-  }
-  if (!sectionId) return;
-  panel.dataset.activeSection = sectionId;
-  items.forEach((item) => {
-    const active = item.dataset.sectionTarget === sectionId;
-    item.classList.toggle('is-active', active);
-    item.setAttribute('aria-pressed', active ? 'true' : 'false');
-  });
-  panel.querySelectorAll('.drawer-content [data-section]').forEach((section) => {
-    const active = section.dataset.section === sectionId;
-    section.hidden = !active;
+function activatePanelSection(sectionId) {
+  if (!elements.panelSections?.length) return;
+  const target = sectionId || elements.panelSections[0]?.dataset.section;
+  elements.panelSections.forEach((section) => {
+    const active = section.dataset.section === target;
     section.classList.toggle('is-active', active);
+    section.hidden = !active;
+  });
+  elements.panelTabs?.forEach((tab) => {
+    const active = tab.dataset.sectionTarget === target;
+    tab.classList.toggle('is-active', active);
+    tab.setAttribute('aria-pressed', active ? 'true' : 'false');
   });
 }
 
-function updatePanelsButton() {
-  if (!elements.btnTogglePanels) return;
-  const anyExpanded = Array.from(document.querySelectorAll('[data-panel]')).some(
-    (panel) => panel.dataset.collapsed !== 'true',
-  );
-  elements.btnTogglePanels.textContent = anyExpanded ? 'Ocultar paneles' : 'Mostrar paneles';
-}
-
-function initializeDrawers() {
-  if (!elements.drawerPanels) return;
-  elements.drawerPanels.forEach((panel) => {
-    const panelId = panel.dataset.panel;
-    const collapsed = panel.dataset.collapsed === 'true';
-    const activeSection = panel.dataset.activeSection;
-    activateDrawerSection(panelId, activeSection);
-    setPanelCollapsed(panelId, collapsed);
-  });
-  updatePanelsButton();
+function setPanelCollapsed(collapsed) {
+  if (!elements.controlPanel || !elements.workspace) return;
+  elements.controlPanel.dataset.collapsed = collapsed ? 'true' : 'false';
+  elements.workspace.classList.toggle('panel-collapsed', collapsed);
+  if (elements.btnPanelToggle) {
+    elements.btnPanelToggle.textContent = collapsed ? 'Mostrar panel' : 'Ocultar panel';
+  }
+  if (elements.panelReveal) {
+    elements.panelReveal.hidden = !collapsed;
+  }
+  setTimeout(() => invalidateMap(), 250);
 }
 
 function applyTheme(theme) {
@@ -155,8 +115,44 @@ function applyTheme(theme) {
   }
   setSceneTheme?.(theme);
   if (elements.btnTheme) {
-    elements.btnTheme.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
-    elements.btnTheme.textContent = theme === 'dark' ? 'Modo claro' : 'Modo oscuro';
+    const pressed = theme === 'dark';
+    elements.btnTheme.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+    elements.btnTheme.textContent = pressed ? 'Modo claro' : 'Modo oscuro';
+  }
+}
+
+function updateViewMode(mode) {
+  const target = mode || 'dual';
+  elements.viewTabs?.forEach((tab) => {
+    const active = tab.dataset.view === target;
+    tab.classList.toggle('is-active', active);
+    tab.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  if (elements.viewGrid) {
+    elements.viewGrid.dataset.activeView = target;
+  }
+  setTimeout(() => invalidateMap(), 250);
+}
+
+function updateMapStyleButton(style) {
+  if (!elements.btnMapStyle) return;
+  if (style === 'satellite') {
+    elements.btnMapStyle.textContent = 'Mapa estándar';
+  } else {
+    elements.btnMapStyle.textContent = 'Mapa satelital';
+  }
+}
+
+function updateResonanceUI(enabled) {
+  const fields = document.getElementById('resonanceFields');
+  if (fields) {
+    fields.toggleAttribute('hidden', !enabled);
+    fields.querySelectorAll('input').forEach((input) => {
+      input.disabled = !enabled;
+    });
+  }
+  if (elements.resonanceHint) {
+    elements.resonanceHint.hidden = !enabled;
   }
 }
 
@@ -176,17 +172,18 @@ function initDefaults() {
   if (elements.timeWarp) {
     elements.timeWarp.value = String(state.time.timeWarp);
   }
-  if (elements.btnTheme) {
-    const saved = localStorage.getItem('qkd-theme');
-    if (saved) {
-      setTheme(saved);
-    }
-    applyTheme(state.theme);
+  const savedTheme = localStorage.getItem('qkd-theme');
+  if (savedTheme) {
+    setTheme(savedTheme);
   }
-  if (elements.viewGrid) {
-    elements.viewGrid.dataset.mode = state.viewMode ?? 'dual';
+  applyTheme(state.theme);
+  updateViewMode(state.viewMode ?? 'dual');
+  updateMapStyleButton(currentMapStyle);
+  updateResonanceUI(state.resonance.enabled);
+  activatePanelSection('orbit');
+  if (elements.panelReveal) {
+    elements.panelReveal.hidden = true;
   }
-  initializeDrawers();
 }
 
 function bindEvents() {
@@ -222,25 +219,23 @@ function bindEvents() {
     sliderEl.addEventListener('input', (event) => updateStateFromValue(event.target.value));
   });
 
-  Array.from(elements.drawerHandles ?? []).forEach((handle) => {
-    handle.addEventListener('click', () => {
-      const target = handle.dataset.target;
-      const panel = getPanelElement(target);
-      if (!panel) return;
-      const collapsed = panel.dataset.collapsed === 'true';
-      setPanelCollapsed(target, !collapsed);
-      updatePanelsButton();
+  elements.panelTabs?.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      activatePanelSection(tab.dataset.sectionTarget);
     });
   });
 
-  Array.from(elements.drawerMenuItems ?? []).forEach((item) => {
-    item.addEventListener('click', () => {
-      const panel = item.closest('[data-panel]');
-      const panelId = panel?.dataset.panel;
-      const section = item.dataset.sectionTarget;
-      if (!panelId || !section) return;
-      activateDrawerSection(panelId, section);
-    });
+  elements.btnPanelToggle?.addEventListener('click', () => {
+    const collapsed = elements.controlPanel?.dataset.collapsed === 'true';
+    setPanelCollapsed(!collapsed);
+  });
+
+  elements.panelReveal?.addEventListener('click', () => setPanelCollapsed(false));
+
+  elements.btnMapStyle?.addEventListener('click', () => {
+    const next = toggleBaseLayer();
+    currentMapStyle = next || (currentMapStyle === 'standard' ? 'satellite' : 'standard');
+    updateMapStyleButton(currentMapStyle);
   });
 
   elements.satelliteName?.addEventListener('input', (event) => {
@@ -256,13 +251,11 @@ function bindEvents() {
   });
 
   elements.resonanceToggle?.addEventListener('change', (event) => {
+    const enabled = event.target.checked;
     mutate((draft) => {
-      draft.resonance.enabled = event.target.checked;
+      draft.resonance.enabled = enabled;
     });
-    document.querySelectorAll('.resonance-grid, .dual').forEach((el) => {
-      if (event.target.checked) el.removeAttribute('data-hidden');
-      else el.setAttribute('data-hidden', '');
-    });
+    updateResonanceUI(enabled);
   });
 
   elements.resonanceOrbits?.addEventListener('change', (event) => {
@@ -295,13 +288,7 @@ function bindEvents() {
       mutate((draft) => {
         draft.viewMode = mode;
       });
-      elements.viewTabs.forEach((other) => {
-        other.classList.toggle('is-active', other === tab);
-        other.setAttribute('aria-selected', other === tab ? 'true' : 'false');
-      });
-      if (elements.viewGrid) {
-        elements.viewGrid.dataset.mode = mode;
-      }
+      updateViewMode(mode);
     });
   });
 
@@ -310,14 +297,6 @@ function bindEvents() {
     setTheme(next);
     applyTheme(next);
     localStorage.setItem('qkd-theme', next);
-  });
-
-  elements.btnTogglePanels?.addEventListener('click', () => {
-    const panels = Array.from(document.querySelectorAll('[data-panel]'));
-    if (!panels.length) return;
-    const shouldCollapse = panels.some((panel) => panel.dataset.collapsed !== 'true');
-    panels.forEach((panel) => setPanelCollapsed(panel.dataset.panel, shouldCollapse));
-    updatePanelsButton();
   });
 
   elements.btnAddStation?.addEventListener('click', () => elements.stationDialog?.showModal());
@@ -342,13 +321,13 @@ function bindEvents() {
       persistStation(station);
       elements.stationDialog.close('saved');
       refreshStationSelect();
-      recomputeMetricsOnly();
+      recomputeMetricsOnly(true);
     });
   }
 
   elements.stationSelect?.addEventListener('change', (event) => {
     selectStation(event.target.value || null);
-    recomputeMetricsOnly();
+    recomputeMetricsOnly(true);
   });
 
   elements.btnFocusStation?.addEventListener('click', () => {
@@ -405,7 +384,9 @@ function recomputeOrbit(force = false) {
     groundTrack: orbitData.groundTrack,
     metrics,
   });
+  updateOrbitPath(orbitData.dataPoints);
   lastMetricsSignature = metricsSignature(state);
+  flyToOrbit(orbitData.groundTrack);
   scheduleVisualUpdate();
 }
 
@@ -430,7 +411,6 @@ function scheduleVisualUpdate() {
 
   updateGroundTrack(groundTrack);
   updateSatellitePosition({ lat: current.lat, lon: current.lon }, computeFootprint(current.alt));
-  updateOrbitPath(dataPoints);
   updateSatellite(current);
   const station = getSelectedStation();
   updateLinkLine({ lat: current.lat, lon: current.lon }, station);
@@ -449,11 +429,11 @@ function computeFootprint(altitudeKm) {
 function updateMetricsUI(index) {
   const { metrics } = state.computed;
   if (!metrics.distanceKm.length) {
-    elements.distanceMetric && (elements.distanceMetric.textContent = '--');
-    elements.elevationMetric && (elements.elevationMetric.textContent = '--');
-    elements.zenithMetric && (elements.zenithMetric.textContent = '--');
-    elements.lossMetric && (elements.lossMetric.textContent = '--');
-    elements.dopplerMetric && (elements.dopplerMetric.textContent = '--');
+    if (elements.distanceMetric) elements.distanceMetric.textContent = '--';
+    if (elements.elevationMetric) elements.elevationMetric.textContent = '--';
+    if (elements.zenithMetric) elements.zenithMetric.textContent = '--';
+    if (elements.lossMetric) elements.lossMetric.textContent = '--';
+    if (elements.dopplerMetric) elements.dopplerMetric.textContent = '--';
     return;
   }
 
@@ -556,6 +536,7 @@ function onStateChange(snapshot) {
     elements.timeSlider.value = String(snapshot.time.index);
   }
   if (snapshot.theme) applyTheme(snapshot.theme);
+  if (snapshot.viewMode) updateViewMode(snapshot.viewMode);
 
   const orbitSig = orbitSignature(snapshot);
   if (orbitSig !== lastOrbitSignature) {
@@ -578,6 +559,7 @@ async function initialize() {
   bindEvents();
 
   mapInstance = initMap(elements.mapContainer);
+  setBaseLayer(currentMapStyle);
   await initScene(elements.threeContainer);
   applyTheme(state.theme);
 
@@ -586,7 +568,9 @@ async function initialize() {
   recomputeOrbit(true);
   subscribe(onStateChange, false);
   playingRaf = requestAnimationFrame(playbackLoop);
-  if (mapInstance) flyToOrbit(state.computed.groundTrack);
+  if (mapInstance) {
+    setTimeout(() => invalidateMap(), 400);
+  }
 }
 
 initialize();

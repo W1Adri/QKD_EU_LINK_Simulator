@@ -6,8 +6,11 @@ let satelliteMarker;
 let footprintLayer;
 let linkLayer;
 const stationMarkers = new Map();
+let baseLayers;
+let currentBase = 'standard';
 
-const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const TILE_STANDARD = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const TILE_SATELLITE = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
 export function initMap(container) {
   if (!container) return null;
@@ -15,7 +18,7 @@ export function initMap(container) {
     zoomSnap: 0.25,
     zoomDelta: 0.5,
     minZoom: 2,
-    maxZoom: 8,
+    maxZoom: 9,
     worldCopyJump: false,
     maxBounds: [
       [-85, -180],
@@ -23,15 +26,23 @@ export function initMap(container) {
     ],
   });
 
-  L.tileLayer(TILE_URL, {
-    attribution: '© OpenStreetMap contributors',
-    noWrap: true,
-  }).addTo(map);
+  baseLayers = {
+    standard: L.tileLayer(TILE_STANDARD, {
+      attribution: '© OpenStreetMap contributors',
+      noWrap: true,
+    }),
+    satellite: L.tileLayer(TILE_SATELLITE, {
+      attribution: 'Imagery © Esri & the GIS User Community',
+      noWrap: true,
+    }),
+  };
+
+  baseLayers.standard.addTo(map);
 
   orbitLayer = L.polyline([], {
     color: '#7c3aed',
     weight: 2.5,
-    opacity: 0.8,
+    opacity: 0.85,
   }).addTo(map);
 
   linkLayer = L.polyline([], {
@@ -56,8 +67,28 @@ export function initMap(container) {
     weight: 1,
   }).addTo(map);
 
-  map.setView([40, 0], 3);
+  map.setView([20, 0], 3);
+  setTimeout(() => map.invalidateSize(), 150);
   return map;
+}
+
+export function setBaseLayer(mode) {
+  if (!map || !baseLayers || !baseLayers[mode]) return;
+  if (currentBase === mode) return;
+  baseLayers[currentBase]?.removeFrom(map);
+  baseLayers[mode].addTo(map);
+  currentBase = mode;
+}
+
+export function toggleBaseLayer() {
+  const next = currentBase === 'standard' ? 'satellite' : 'standard';
+  setBaseLayer(next);
+  return next;
+}
+
+export function invalidateSize() {
+  if (!map) return;
+  map.invalidateSize();
 }
 
 export function updateGroundTrack(points) {
