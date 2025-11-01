@@ -68,15 +68,11 @@ button {
   border-radius: var(--radius-sm);
   padding: 0.45rem 0.85rem;
   font-weight: 500;
-  transition: background var(--transition), transform var(--transition);
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
 }
 
 button:hover {
   background: var(--accent-soft);
-}
-
-button:active {
-  transform: none;
 }
 
 button.ghost {
@@ -171,21 +167,21 @@ button.ghost:hover {
 }
 
 .panel-tabs {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
   padding: 1rem 1.2rem 0.6rem;
   border-bottom: 1px solid var(--border);
 }
 
 .panel-tabs button {
   min-width: 0;
-  padding: 0.55rem 0.6rem;
+  padding: 0.55rem 0.65rem;
   border-radius: var(--radius-sm);
   background: transparent;
   border: 1px solid transparent;
   color: var(--text-muted);
-  white-space: nowrap;
+  text-align: left;
 }
 
 .panel-tabs button.is-active {
@@ -448,7 +444,8 @@ input[type="range"] {
   flex: 1;
 }
 
-#threeContainer canvas {
+#threeContainer canvas,
+#threeContainer .globe-canvas {
   width: 100% !important;
   height: 100% !important;
   display: block;
