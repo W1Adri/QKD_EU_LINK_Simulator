@@ -1,217 +1,231 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>QKD Europe Planner</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
-  <link rel="stylesheet" href="/static/style.css" />
+  <title>QKD Orbit Designer</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <link rel="stylesheet" href="/static/styles/app.css" />
 </head>
 <body>
-  <div id="map"></div>
-
-  <div id="panel">
-    <header class="panel-header">
-      <h1>QKD Europe Planner (2D)</h1>
-      <span id="activeOrbit">sat-leo</span>
-      <button id="panelToggle" aria-expanded="true" aria-controls="panelBody">Collapse</button>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="brand">
+        <h1>QKD Orbit Designer</h1>
+        <p>Visualiza órbitas resonantes y enlaces ópticos Tierra-satélite</p>
+      </div>
+      <div class="header-actions">
+        <button id="btnPanelToggle" type="button" class="ghost">Ocultar panel</button>
+        <button id="btnMapStyle" type="button" class="ghost">Mapa satelital</button>
+        <button id="btnTheme" type="button" class="ghost" aria-pressed="false">Modo oscuro</button>
+      </div>
     </header>
 
-    <div id="panelBody">
-    <section class="section">
-      <div class="field">
-        <label for="satName">Satellite name</label>
-        <input id="satName" value="sat-leo" />
-      </div>
-      <div class="field">
-        <label for="epoch">Epoch (UTC)</label>
-        <input id="epoch" type="datetime-local" />
-      </div>
-    </section>
+    <main class="workspace">
+      <aside id="controlPanel" class="control-panel" data-collapsed="false" aria-expanded="true">
+        <nav class="panel-tabs" aria-label="Secciones de configuración">
+          <button type="button" class="is-active" data-section-target="orbit">Órbita</button>
+          <button type="button" data-section-target="resonance">Resonancia</button>
+          <button type="button" data-section-target="optics">Enlace óptico</button>
+          <button type="button" data-section-target="stations">Estaciones</button>
+          <button type="button" data-section-target="analytics">Gráficas</button>
+        </nav>
+        <div class="panel-content">
+          <section class="panel-section is-active" data-section="orbit">
+            <header>
+              <h2>Configuración orbital</h2>
+              <p>Define la órbita y los parámetros iniciales del satélite.</p>
+            </header>
+            <div class="field">
+              <label for="satelliteName">Nombre del satélite</label>
+              <input id="satelliteName" type="text" value="Sat-QKD" />
+            </div>
+            <div class="field">
+              <label for="epochInput">Época (UTC)</label>
+              <input id="epochInput" type="datetime-local" />
+            </div>
+            <div class="field-group">
+              <label for="semiMajor">Semieje mayor a (km)</label>
+              <input id="semiMajor" type="number" step="1" min="6600" max="9000" value="6771" />
+              <input id="semiMajorSlider" type="range" min="6600" max="9000" value="6771" />
+            </div>
+            <div class="field-group">
+              <label for="eccentricity">Excentricidad e</label>
+              <input id="eccentricity" type="number" step="0.001" min="0" max="0.2" value="0.001" />
+              <input id="eccentricitySlider" type="range" min="0" max="0.2" step="0.001" value="0.001" />
+            </div>
+            <div class="field-group">
+              <label for="inclination">Inclinación i (°)</label>
+              <input id="inclination" type="number" step="0.1" min="0" max="180" value="53" />
+              <input id="inclinationSlider" type="range" min="0" max="180" step="0.1" value="53" />
+            </div>
+            <div class="field-group inline">
+              <div class="field">
+                <label for="raan">RAAN Ω (°)</label>
+                <input id="raan" type="number" step="0.1" min="0" max="360" value="0" />
+                <input id="raanSlider" type="range" min="0" max="360" step="0.1" value="0" />
+              </div>
+              <div class="field">
+                <label for="argPerigee">Argumento de perigeo ω (°)</label>
+                <input id="argPerigee" type="number" step="0.1" min="0" max="360" value="0" />
+                <input id="argPerigeeSlider" type="range" min="0" max="360" step="0.1" value="0" />
+              </div>
+            </div>
+            <div class="field-group">
+              <label for="meanAnomaly">Anomalía media M₀ (°)</label>
+              <input id="meanAnomaly" type="number" step="0.1" min="0" max="360" value="0" />
+              <input id="meanAnomalySlider" type="range" min="0" max="360" step="0.1" value="0" />
+            </div>
+          </section>
 
-    <section class="section">
-      <h2>Orbital parameters</h2>
-      <div class="param">
-        <label for="a">Semi-major axis a (km)</label>
-        <div class="controls">
-          <input id="a" type="number" step="1" value="6771" />
-          <input id="aSlider" type="range" />
-        </div>
-      </div>
-      <div class="param">
-        <label for="e">Eccentricity e</label>
-        <div class="controls">
-          <input id="e" type="number" step="0.001" value="0.001" />
-          <input id="eSlider" type="range" />
-        </div>
-      </div>
-      <div class="param">
-        <label for="i">Inclination i (deg)</label>
-        <div class="controls">
-          <input id="i" type="number" step="0.1" value="53.0" />
-          <input id="iSlider" type="range" />
-        </div>
-      </div>
-      <div class="param">
-        <label for="raan">RAAN Ω (deg)</label>
-        <div class="controls">
-          <input id="raan" type="number" step="0.1" value="0.0" />
-          <input id="raanSlider" type="range" />
-        </div>
-      </div>
-      <div class="param">
-        <label for="argp">Argument of perigee ω (deg)</label>
-        <div class="controls">
-          <input id="argp" type="number" step="0.1" value="0.0" />
-          <input id="argpSlider" type="range" />
-        </div>
-      </div>
-      <div class="param">
-        <label for="M0">Mean anomaly M₀ (deg)</label>
-        <div class="controls">
-          <input id="M0" type="number" step="0.1" value="0.0" />
-          <input id="M0Slider" type="range" />
-        </div>
-      </div>
-    </section>
+          <section class="panel-section" data-section="resonance">
+            <header>
+              <h2>Resonancia y repetición</h2>
+              <p>Controla la relación entre órbitas y rotaciones terrestres.</p>
+            </header>
+            <label class="checkbox">
+              <input id="resonanceToggle" type="checkbox" />
+              Forzar repetición de ground-track
+            </label>
+            <div class="field-group inline" id="resonanceFields" hidden>
+              <div class="field">
+                <label for="resonanceOrbits">Nº órbitas</label>
+                <input id="resonanceOrbits" type="number" min="1" max="30" value="1" />
+              </div>
+              <div class="field">
+                <label for="resonanceRotations">Rotaciones de la Tierra</label>
+                <input id="resonanceRotations" type="number" min="1" max="30" value="1" />
+              </div>
+            </div>
+            <p class="hint" hidden>Utiliza combinaciones pequeñas (por ejemplo 15:1) para órbitas periódicas estables.</p>
+          </section>
 
-    <section class="section">
-      <h2>Satellite</h2>
-      <div class="param">
-        <label for="aperture">Telescope aperture (m)</label>
-        <div class="controls">
-          <input id="aperture" type="number" step="0.1" value="1.0" />
-          <input id="apertureSlider" type="range" />
-        </div>
-      </div>
-      <div class="actions">
-        <button id="btnSaveOrbit">Save orbits</button>
-        <button id="btnImportOrbit">Import orbit</button>
-        <button id="btnClearOrbits">Clear saved</button>
-        <button id="btnOpen3D">Open 3D</button>
-      </div>
-    </section>
+          <section class="panel-section" data-section="optics">
+            <header>
+              <h2>Enlace óptico</h2>
+              <p>Define aperturas, longitud de onda y muestreo temporal.</p>
+            </header>
+            <div class="field-group">
+              <label for="satAperture">Apertura satélite (m)</label>
+              <input id="satAperture" type="number" min="0.1" max="3" step="0.05" value="0.6" />
+              <input id="satApertureSlider" type="range" min="0.1" max="3" step="0.05" value="0.6" />
+            </div>
+            <div class="field-group">
+              <label for="groundAperture">Apertura estación (m)</label>
+              <input id="groundAperture" type="number" min="0.1" max="5" step="0.05" value="1.0" />
+              <input id="groundApertureSlider" type="range" min="0.1" max="5" step="0.05" value="1.0" />
+            </div>
+            <div class="field-group">
+              <label for="wavelength">Longitud de onda (nm)</label>
+              <input id="wavelength" type="number" min="600" max="1700" step="1" value="810" />
+              <input id="wavelengthSlider" type="range" min="600" max="1700" step="1" value="810" />
+            </div>
+            <div class="field-group">
+              <label for="samplesPerOrbit">Muestras por órbita</label>
+              <input id="samplesPerOrbit" type="number" min="60" max="720" step="10" value="180" />
+              <input id="samplesPerOrbitSlider" type="range" min="60" max="720" step="10" value="180" />
+            </div>
+          </section>
 
-    <section class="section">
-      <h2>Time controls</h2>
-      <div class="time-controls">
-        <button id="btnPlay">▶</button>
-        <button id="btnPause">⏸</button>
-        <button id="btnStepBack">⏪</button>
-        <button id="btnStepForward">⏩</button>
-        <button id="btnResetTime">↺</button>
-        <label for="speed">Speed</label>
-        <select id="speed">
-          <option value="1">x1</option>
-          <option value="5">x5</option>
-          <option value="10">x10</option>
-          <option value="50">x50</option>
-          <option value="100" selected>x100</option>
-          <option value="500">x500</option>
-          <option value="1000">x1000</option>
-        </select>
-      </div>
-      <div class="scrubber">
-        <input id="timeSlider" type="range" min="0" max="5400" step="1" value="0" />
-        <div class="time-readout">
-          <span>t = <span id="timeDisplay">0.0</span> s</span>
-          <span>/ <span id="timeMaxDisplay">--</span></span>
-        </div>
-      </div>
-      <div class="row compact">
-        <label for="revSelect">Display interval</label>
-        <select id="revSelect">
-          <option value="1">1 revolution</option>
-          <option value="2">2 rev.</option>
-          <option value="3">3 rev.</option>
-          <option value="5">5 rev.</option>
-          <option value="10">10 rev.</option>
-          <option value="repeat">Until repeat ground-track</option>
-        </select>
-      </div>
-    </section>
+          <section class="panel-section" data-section="stations">
+            <header>
+              <h2>Estaciones de tierra</h2>
+              <p>Selecciona estaciones, crea nuevas y analiza la conexión.</p>
+            </header>
+            <div class="station-toolbar">
+              <select id="stationSelect"></select>
+              <button id="btnAddStation" type="button">Añadir</button>
+              <button id="btnFocusStation" type="button">Enfocar</button>
+            </div>
+            <dl class="metrics" id="stationMetrics">
+              <div><dt>Distancia</dt><dd id="distanceMetric">--</dd></div>
+              <div><dt>Elevación</dt><dd id="elevationMetric">--</dd></div>
+              <div><dt>Ángulo cenital</dt><dd id="zenithMetric">--</dd></div>
+              <div><dt>Pérdida geométrica</dt><dd id="lossMetric">--</dd></div>
+              <div><dt>Factor Doppler</dt><dd id="dopplerMetric">--</dd></div>
+            </dl>
+          </section>
 
-    <section class="section">
-      <h2>Ground-track repetition</h2>
-      <label class="checkbox">
-        <input id="chkCloseTrack" type="checkbox" />
-        Close track (resonant orbit)
-      </label>
-      <div id="resonanceControls" class="hidden">
-        <div class="row compact">
-          <label for="resLock">Lock</label>
-          <select id="resLock">
-            <option value="orbits">Fix N orbits</option>
-            <option value="rotations">Fix N rotations</option>
-          </select>
+          <section class="panel-section" data-section="analytics">
+            <header>
+              <h2>Gráficas</h2>
+              <p>Vista rápida de pérdidas, elevación y distancia.</p>
+            </header>
+            <div class="mini-chart" id="chartLoss">Pérdidas geométricas</div>
+            <div class="mini-chart" id="chartElevation">Elevación</div>
+            <div class="mini-chart" id="chartDistance">Distancia</div>
+          </section>
         </div>
-        <div class="row compact">
-          <label for="resOrbits">N orbits</label>
-          <input id="resOrbits" type="number" min="1" max="30" step="1" value="1" />
-        </div>
-        <div class="row compact">
-          <label for="resRotations">N rotations</label>
-          <input id="resRotations" type="number" min="1" max="30" step="1" value="1" />
-        </div>
-        <div id="resFeedback">Choose small integers (≤30) for closed ground-track solutions.</div>
-      </div>
-    </section>
+      </aside>
 
-    <section class="section">
-      <h2>Optical ground stations</h2>
-      <div class="param">
-        <label for="ogsAperture">OGS aperture (m)</label>
-        <div class="controls">
-          <input id="ogsAperture" type="number" step="0.1" value="1.0" />
-          <input id="ogsApertureSlider" type="range" min="0.1" max="10" step="0.1" value="1.0" />
-        </div>
-      </div>
-      <div class="actions">
-        <button id="btnCreateOGS">Create OGS mode</button>
-        <button id="btnClearOGS">Clear OGS</button>
-      </div>
-    </section>
+      <div id="panelResizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-controls="controlPanel" aria-label="Ajustar anchura del panel" tabindex="0"></div>
 
-    <section class="section stats">
-      <div class="stat">
-        <span class="label">Period</span>
-        <span class="value" id="statPeriod">--</span>
-      </div>
-      <div class="stat">
-        <span class="label">Trep</span>
-        <span class="value" id="statTRep">--</span>
-      </div>
-      <div class="stat">
-        <span class="label">Perigee</span>
-        <span class="value" id="statPerigee">--</span>
-      </div>
-      <div class="stat">
-        <span class="label">Apogee</span>
-        <span class="value" id="statApogee">--</span>
-      </div>
-      <div class="stat">
-        <span class="label">Speed</span>
-        <span class="value" id="statSpeed">--</span>
-      </div>
-      <div class="stat">
-        <span class="label">Satellite aperture</span>
-        <span class="value" id="statAperture">--</span>
-      </div>
-      <div class="stat">
-        <span class="label">Resonance error</span>
-        <span class="value" id="statResError">--</span>
-      </div>
-      <div class="stat">
-        <span class="label">Active OGS</span>
-        <span class="value" id="statOGS">--</span>
-      </div>
-    </section>
-    </div>
+      <section class="visual-area">
+        <button id="panelReveal" class="panel-reveal" type="button" hidden>Mostrar controles</button>
+        <div class="view-toolbar" role="tablist">
+          <button class="is-active" data-view="dual" role="tab" aria-selected="true">Vista dual</button>
+          <button data-view="3d" role="tab" aria-selected="false">Solo 3D</button>
+          <button data-view="2d" role="tab" aria-selected="false">Solo 2D</button>
+        </div>
+        <div class="view-grid" id="viewGrid" data-active-view="dual">
+          <div id="threeContainer" class="view-pane view-3d" aria-label="Globo 3D">
+            <div id="threeFallback" hidden>No se pudo inicializar la escena 3D.</div>
+          </div>
+          <div id="mapContainer" class="view-pane view-2d" aria-label="Mapa 2D"></div>
+        </div>
+        <div class="timeline">
+          <div class="timeline-header">
+            <strong>Control temporal</strong>
+            <div class="timeline-actions">
+              <button id="btnPlay" type="button">▶</button>
+              <button id="btnPause" type="button">⏸</button>
+              <button id="btnStepBack" type="button">⏪</button>
+              <button id="btnStepForward" type="button">⏩</button>
+              <button id="btnResetTime" type="button">↺</button>
+              <label for="timeWarp">Velocidad</label>
+              <select id="timeWarp">
+                <option value="1">x1</option>
+                <option value="10">x10</option>
+                <option value="60" selected>x60</option>
+                <option value="300">x300</option>
+                <option value="900">x900</option>
+              </select>
+            </div>
+          </div>
+          <input id="timeSlider" type="range" min="0" max="1" step="1" value="0" />
+          <div class="timeline-readout">
+            <span>t = <span id="timeLabel">0 s</span></span>
+            <span class="spacer">·</span>
+            <span>Elevación: <span id="elevationLabel">--</span></span>
+            <span class="spacer">·</span>
+            <span>Pérdida geométrica: <span id="lossLabel">--</span></span>
+          </div>
+        </div>
+      </section>
+    </main>
   </div>
 
-  <div id="boot-msg">Loading map...</div>
+  <dialog id="stationDialog">
+    <form method="dialog" class="dialog-content">
+      <h2>Nueva estación de tierra</h2>
+      <label>Nombre<input id="stationName" required /></label>
+      <label>Latitud (°)<input id="stationLat" type="number" min="-90" max="90" step="0.0001" required /></label>
+      <label>Longitud (°)<input id="stationLon" type="number" min="-180" max="180" step="0.0001" required /></label>
+      <label>Apertura (m)<input id="stationAperture" type="number" min="0.1" max="8" step="0.1" value="1.0" required /></label>
+      <menu>
+        <button value="cancel">Cancelar</button>
+        <button id="stationSave" value="default">Guardar</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <template id="stationOptionTemplate">
+    <option></option>
+  </template>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="/static/app.js"></script>
+  <script type="module" src="/static/js/main.js"></script>
 </body>
 </html>
