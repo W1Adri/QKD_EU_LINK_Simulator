@@ -2,9 +2,10 @@ import { constants as orbitConstants, stationEcef } from './orbit.js';
 
 const { EARTH_RADIUS_KM } = orbitConstants;
 const UNIT_SCALE = 1 / EARTH_RADIUS_KM;
-const EARTH_TEXTURE_URL = 'https://cdn.jsdelivr.net/npm/three@0.158.0/examples/textures/planets/earth_atmos_2048.jpg';
-const EARTH_SPECULAR_URL = 'https://cdn.jsdelivr.net/npm/three@0.158.0/examples/textures/planets/earth_specular_2048.jpg';
-const EARTH_BUMP_URL = 'https://cdn.jsdelivr.net/npm/three@0.158.0/examples/textures/planets/earth_normal_2048.jpg';
+const THREE_EXAMPLES_BASE = 'https://raw.githubusercontent.com/mrdoob/three.js/r158/examples/textures/planets/';
+const EARTH_TEXTURE_URL = `${THREE_EXAMPLES_BASE}earth_atmos_2048.jpg`;
+const EARTH_SPECULAR_URL = `${THREE_EXAMPLES_BASE}earth_specular_2048.jpg`;
+const EARTH_BUMP_URL = `${THREE_EXAMPLES_BASE}earth_normal_2048.jpg`;
 
 let THREE;
 let OrbitControls;
