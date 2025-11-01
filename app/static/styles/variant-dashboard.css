@@ -5,6 +5,10 @@ body[data-variant="dashboard"] .workspace {
   padding: 1.5rem 2rem;
 }
 
+body[data-variant="dashboard"] .workspace.is-primary-collapsed {
+  grid-template-columns: minmax(70px, 0.25fr) minmax(500px, 1fr);
+}
+
 body[data-variant="dashboard"] .visual-area {
   display: flex;
   flex-direction: column;
@@ -29,18 +33,10 @@ body[data-variant="dashboard"] .control-panel {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+}
+
+body[data-variant="dashboard"] .control-panel .drawer-body {
   max-height: calc(100vh - 220px);
-  overflow-y: auto;
-  scrollbar-width: thin;
-}
-
-body[data-variant="dashboard"] .control-panel::-webkit-scrollbar {
-  width: 8px;
-}
-
-body[data-variant="dashboard"] .control-panel::-webkit-scrollbar-thumb {
-  background: var(--accent-soft);
-  border-radius: 999px;
 }
 
 body[data-variant="dashboard"] .timeline {
@@ -57,7 +53,7 @@ body[data-variant="dashboard"] .timeline {
     grid-auto-rows: minmax(360px, auto);
   }
 
-  body[data-variant="dashboard"] .control-panel {
+  body[data-variant="dashboard"] .control-panel .drawer-body {
     max-height: none;
   }
 }

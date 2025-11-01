@@ -9,6 +9,14 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <link rel="stylesheet" href="/static/styles/base.css" />
   <link rel="stylesheet" href="/static/styles/variant-compact.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js",
+        "three/examples/": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/"
+      }
+    }
+  </script>
 </head>
 <body data-variant="compact">
   <div class="app-shell">
@@ -29,102 +37,113 @@
     </header>
 
     <main class="workspace">
-      <aside class="control-panel" data-panel="primary">
-        <section class="panel-group">
-          <header>
-            <h2>Configuración orbital</h2>
-            <p>Define la órbita resonante y el estado inicial.</p>
-          </header>
-          <div class="field">
-            <label for="satelliteName">Nombre del satélite</label>
-            <input id="satelliteName" type="text" value="Sat-QKD" />
+      <aside class="control-panel drawer" data-panel="primary" data-collapsed="false">
+        <div class="drawer-body" id="drawer-primary">
+          <nav class="drawer-menu" aria-label="Paneles de configuración">
+            <button type="button" class="drawer-menu-item is-active" data-section-target="orbit">Órbita</button>
+            <button type="button" class="drawer-menu-item" data-section-target="resonance">Resonancia</button>
+            <button type="button" class="drawer-menu-item" data-section-target="optics">Enlace óptico</button>
+          </nav>
+          <div class="drawer-content">
+            <section class="panel-group" data-section="orbit">
+              <header>
+                <h2>Configuración orbital</h2>
+                <p>Define la órbita resonante y el estado inicial.</p>
+              </header>
+              <div class="field">
+                <label for="satelliteName">Nombre del satélite</label>
+                <input id="satelliteName" type="text" value="Sat-QKD" />
+              </div>
+              <div class="field">
+                <label for="epochInput">Época (UTC)</label>
+                <input id="epochInput" type="datetime-local" />
+              </div>
+              <div class="field-group">
+                <div class="field with-slider">
+                  <label for="semiMajor">Semieje mayor a (km)</label>
+                  <input id="semiMajor" type="number" step="1" min="6600" max="9000" value="6771" />
+                  <input id="semiMajorSlider" type="range" min="6600" max="9000" value="6771" />
+                </div>
+                <div class="field with-slider">
+                  <label for="eccentricity">Excentricidad e</label>
+                  <input id="eccentricity" type="number" step="0.001" min="0" max="0.2" value="0.001" />
+                  <input id="eccentricitySlider" type="range" min="0" max="0.2" step="0.001" value="0.001" />
+                </div>
+                <div class="field with-slider">
+                  <label for="inclination">Inclinación i (°)</label>
+                  <input id="inclination" type="number" step="0.1" min="0" max="180" value="53" />
+                  <input id="inclinationSlider" type="range" min="0" max="180" step="0.1" value="53" />
+                </div>
+                <div class="field with-slider">
+                  <label for="raan">RAAN Ω (°)</label>
+                  <input id="raan" type="number" step="0.1" min="0" max="360" value="0" />
+                  <input id="raanSlider" type="range" min="0" max="360" step="0.1" value="0" />
+                </div>
+                <div class="field with-slider">
+                  <label for="argPerigee">Argumento de perigeo ω (°)</label>
+                  <input id="argPerigee" type="number" step="0.1" min="0" max="360" value="0" />
+                  <input id="argPerigeeSlider" type="range" min="0" max="360" step="0.1" value="0" />
+                </div>
+                <div class="field with-slider">
+                  <label for="meanAnomaly">Anomalía media M₀ (°)</label>
+                  <input id="meanAnomaly" type="number" step="0.1" min="0" max="360" value="0" />
+                  <input id="meanAnomalySlider" type="range" min="0" max="360" step="0.1" value="0" />
+                </div>
+              </div>
+            </section>
+            <section class="panel-group" data-section="resonance" hidden>
+              <header>
+                <h2>Resonancia y repetición</h2>
+                <p>Asegura que la traza terrestre se cierre tras N órbitas.</p>
+              </header>
+              <label class="checkbox">
+                <input id="resonanceToggle" type="checkbox" />
+                Forzar repetición de ground-track
+              </label>
+              <div class="resonance-grid" data-hidden>
+                <label class="field">
+                  <span>Nº órbitas</span>
+                  <input id="resonanceOrbits" type="number" min="1" max="30" value="1" />
+                </label>
+                <label class="field">
+                  <span>Nº rotaciones de la Tierra</span>
+                  <input id="resonanceRotations" type="number" min="1" max="30" value="1" />
+                </label>
+                <p class="hint">Usa enteros pequeños para coincidencias periódicas estables.</p>
+              </div>
+            </section>
+            <section class="panel-group" data-section="optics" hidden>
+              <header>
+                <h2>Parámetros del enlace óptico</h2>
+                <p>Configura telescopios, longitud de onda y muestreo temporal.</p>
+              </header>
+              <div class="field with-slider">
+                <label for="satAperture">Apertura satélite (m)</label>
+                <input id="satAperture" type="number" min="0.1" max="3" step="0.05" value="0.6" />
+                <input id="satApertureSlider" type="range" min="0.1" max="3" step="0.05" value="0.6" />
+              </div>
+              <div class="field with-slider">
+                <label for="groundAperture">Apertura estación (m)</label>
+                <input id="groundAperture" type="number" min="0.1" max="5" step="0.05" value="1.0" />
+                <input id="groundApertureSlider" type="range" min="0.1" max="5" step="0.05" value="1.0" />
+              </div>
+              <div class="field with-slider">
+                <label for="wavelength">Longitud de onda (nm)</label>
+                <input id="wavelength" type="number" min="600" max="1700" step="1" value="810" />
+                <input id="wavelengthSlider" type="range" min="600" max="1700" step="1" value="810" />
+              </div>
+              <div class="field with-slider">
+                <label for="samplesPerOrbit">Muestras por órbita</label>
+                <input id="samplesPerOrbit" type="number" min="60" max="720" step="10" value="180" />
+                <input id="samplesPerOrbitSlider" type="range" min="60" max="720" step="10" value="180" />
+              </div>
+            </section>
           </div>
-          <div class="field">
-            <label for="epochInput">Época (UTC)</label>
-            <input id="epochInput" type="datetime-local" />
-          </div>
-          <div class="field-group">
-            <div class="field with-slider">
-              <label for="semiMajor">Semieje mayor a (km)</label>
-              <input id="semiMajor" type="number" step="1" min="6600" max="9000" value="6771" />
-              <input id="semiMajorSlider" type="range" min="6600" max="9000" value="6771" />
-            </div>
-            <div class="field with-slider">
-              <label for="eccentricity">Excentricidad e</label>
-              <input id="eccentricity" type="number" step="0.001" min="0" max="0.2" value="0.001" />
-              <input id="eccentricitySlider" type="range" min="0" max="0.2" step="0.001" value="0.001" />
-            </div>
-            <div class="field with-slider">
-              <label for="inclination">Inclinación i (°)</label>
-              <input id="inclination" type="number" step="0.1" min="0" max="180" value="53" />
-              <input id="inclinationSlider" type="range" min="0" max="180" step="0.1" value="53" />
-            </div>
-            <div class="field with-slider">
-              <label for="raan">RAAN Ω (°)</label>
-              <input id="raan" type="number" step="0.1" min="0" max="360" value="0" />
-              <input id="raanSlider" type="range" min="0" max="360" step="0.1" value="0" />
-            </div>
-            <div class="field with-slider">
-              <label for="argPerigee">Argumento de perigeo ω (°)</label>
-              <input id="argPerigee" type="number" step="0.1" min="0" max="360" value="0" />
-              <input id="argPerigeeSlider" type="range" min="0" max="360" step="0.1" value="0" />
-            </div>
-            <div class="field with-slider">
-              <label for="meanAnomaly">Anomalía media M₀ (°)</label>
-              <input id="meanAnomaly" type="number" step="0.1" min="0" max="360" value="0" />
-              <input id="meanAnomalySlider" type="range" min="0" max="360" step="0.1" value="0" />
-            </div>
-          </div>
-        </section>
-
-        <section class="panel-group">
-          <header>
-            <h2>Resonancia y repetición</h2>
-            <p>Asegura que la traza terrestre se cierre tras N órbitas.</p>
-          </header>
-          <label class="checkbox">
-            <input id="resonanceToggle" type="checkbox" />
-            Forzar repetición de ground-track
-          </label>
-          <div class="resonance-grid" data-hidden>
-            <label class="field">
-              <span>Nº órbitas</span>
-              <input id="resonanceOrbits" type="number" min="1" max="30" value="1" />
-            </label>
-            <label class="field">
-              <span>Nº rotaciones de la Tierra</span>
-              <input id="resonanceRotations" type="number" min="1" max="30" value="1" />
-            </label>
-            <p class="hint">Usa enteros pequeños para coincidencias periódicas estables.</p>
-          </div>
-        </section>
-
-        <section class="panel-group">
-          <header>
-            <h2>Parámetros del enlace óptico</h2>
-            <p>Configura telescopios, longitud de onda y muestreo temporal.</p>
-          </header>
-          <div class="field with-slider">
-            <label for="satAperture">Apertura satélite (m)</label>
-            <input id="satAperture" type="number" min="0.1" max="3" step="0.05" value="0.6" />
-            <input id="satApertureSlider" type="range" min="0.1" max="3" step="0.05" value="0.6" />
-          </div>
-          <div class="field with-slider">
-            <label for="groundAperture">Apertura estación (m)</label>
-            <input id="groundAperture" type="number" min="0.1" max="5" step="0.05" value="1.0" />
-            <input id="groundApertureSlider" type="range" min="0.1" max="5" step="0.05" value="1.0" />
-          </div>
-          <div class="field with-slider">
-            <label for="wavelength">Longitud de onda (nm)</label>
-            <input id="wavelength" type="number" min="600" max="1700" step="1" value="810" />
-            <input id="wavelengthSlider" type="range" min="600" max="1700" step="1" value="810" />
-          </div>
-          <div class="field with-slider">
-            <label for="samplesPerOrbit">Muestras por órbita</label>
-            <input id="samplesPerOrbit" type="number" min="60" max="720" step="10" value="180" />
-            <input id="samplesPerOrbitSlider" type="range" min="60" max="720" step="10" value="180" />
-          </div>
-        </section>
+        </div>
+        <button class="drawer-handle" type="button" data-target="primary" aria-controls="drawer-primary" aria-expanded="true">
+          <span class="icon" aria-hidden="true">◀</span>
+          <span class="label">Controles</span>
+        </button>
       </aside>
 
       <section class="visual-area">
@@ -167,35 +186,46 @@
         </div>
       </section>
 
-      <aside class="insight-panel" data-panel="secondary">
-        <section class="panel-group">
-          <header>
-            <h2>Estaciones de tierra</h2>
-            <p>Selecciona o crea estaciones y analiza la distancia al satélite.</p>
-          </header>
-          <div class="station-toolbar">
-            <select id="stationSelect"></select>
-            <button id="btnAddStation" type="button">Añadir</button>
-            <button id="btnFocusStation" type="button">Enfocar</button>
+      <aside class="insight-panel drawer" data-panel="secondary" data-collapsed="false">
+        <div class="drawer-body" id="drawer-secondary">
+          <nav class="drawer-menu" aria-label="Paneles de análisis">
+            <button type="button" class="drawer-menu-item is-active" data-section-target="stations">Estaciones</button>
+            <button type="button" class="drawer-menu-item" data-section-target="analytics">Gráficas</button>
+          </nav>
+          <div class="drawer-content">
+            <section class="panel-group" data-section="stations">
+              <header>
+                <h2>Estaciones de tierra</h2>
+                <p>Selecciona o crea estaciones y analiza la distancia al satélite.</p>
+              </header>
+              <div class="station-toolbar">
+                <select id="stationSelect"></select>
+                <button id="btnAddStation" type="button">Añadir</button>
+                <button id="btnFocusStation" type="button">Enfocar</button>
+              </div>
+              <dl class="metrics" id="stationMetrics">
+                <div><dt>Distancia</dt><dd id="distanceMetric">--</dd></div>
+                <div><dt>Elevación</dt><dd id="elevationMetric">--</dd></div>
+                <div><dt>Ángulo cenital</dt><dd id="zenithMetric">--</dd></div>
+                <div><dt>Pérdida geométrica</dt><dd id="lossMetric">--</dd></div>
+                <div><dt>Factor Doppler</dt><dd id="dopplerMetric">--</dd></div>
+              </dl>
+            </section>
+            <section class="panel-group" data-section="analytics" hidden>
+              <header>
+                <h2>Gráficas rápidas</h2>
+                <p>Vista previa de pérdidas, elevación y distancia.</p>
+              </header>
+              <div class="mini-chart" id="chartLoss"></div>
+              <div class="mini-chart" id="chartElevation"></div>
+              <div class="mini-chart" id="chartDistance"></div>
+            </section>
           </div>
-          <dl class="metrics" id="stationMetrics">
-            <div><dt>Distancia</dt><dd id="distanceMetric">--</dd></div>
-            <div><dt>Elevación</dt><dd id="elevationMetric">--</dd></div>
-            <div><dt>Ángulo cenital</dt><dd id="zenithMetric">--</dd></div>
-            <div><dt>Pérdida geométrica</dt><dd id="lossMetric">--</dd></div>
-            <div><dt>Factor Doppler</dt><dd id="dopplerMetric">--</dd></div>
-          </dl>
-        </section>
-
-        <section class="panel-group">
-          <header>
-            <h2>Gráficas rápidas</h2>
-            <p>Vista previa de pérdidas, elevación y distancia.</p>
-          </header>
-          <div class="mini-chart" id="chartLoss"></div>
-          <div class="mini-chart" id="chartElevation"></div>
-          <div class="mini-chart" id="chartDistance"></div>
-        </section>
+        </div>
+        <button class="drawer-handle" type="button" data-target="secondary" aria-controls="drawer-secondary" aria-expanded="true">
+          <span class="icon" aria-hidden="true">▶</span>
+          <span class="label">Insights</span>
+        </button>
       </aside>
     </main>
   </div>

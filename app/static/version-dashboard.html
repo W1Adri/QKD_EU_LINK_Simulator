@@ -9,6 +9,14 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <link rel="stylesheet" href="/static/styles/base.css" />
   <link rel="stylesheet" href="/static/styles/variant-dashboard.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js",
+        "three/examples/": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/"
+      }
+    }
+  </script>
 </head>
 <body data-variant="dashboard">
   <div class="app-shell">
@@ -23,7 +31,7 @@
         <a href="/static/version-immersive.html">Inmersiva</a>
       </nav>
       <div class="header-actions">
-        <button id="btnTogglePanels" class="ghost" type="button">Contraer controles</button>
+        <button id="btnTogglePanels" class="ghost" type="button">Ocultar paneles</button>
         <button id="btnTheme" class="ghost" type="button" aria-pressed="false">Modo oscuro</button>
       </div>
     </header>
@@ -82,70 +90,81 @@
         </div>
       </section>
 
-      <aside class="control-panel" data-panel="primary">
-        <section class="panel-group">
-          <header>
-            <h2>Órbita</h2>
-            <p>Selecciona condiciones iniciales.</p>
-          </header>
-          <div class="field">
-            <label for="satelliteName">Nombre</label>
-            <input id="satelliteName" type="text" value="Sat-QKD" />
+      <aside class="control-panel drawer" data-panel="primary" data-collapsed="false">
+        <div class="drawer-body" id="dashboard-drawer">
+          <nav class="drawer-menu" aria-label="Paneles de control">
+            <button type="button" class="drawer-menu-item is-active" data-section-target="orbit">Órbita</button>
+            <button type="button" class="drawer-menu-item" data-section-target="optics">Enlace óptico</button>
+            <button type="button" class="drawer-menu-item" data-section-target="stations">Estaciones</button>
+          </nav>
+          <div class="drawer-content">
+            <section class="panel-group" data-section="orbit">
+              <header>
+                <h2>Órbita</h2>
+                <p>Selecciona condiciones iniciales.</p>
+              </header>
+              <div class="field">
+                <label for="satelliteName">Nombre</label>
+                <input id="satelliteName" type="text" value="Sat-QKD" />
+              </div>
+              <div class="field">
+                <label for="epochInput">Época</label>
+                <input id="epochInput" type="datetime-local" />
+              </div>
+              <div class="field-columns">
+                <label class="field">a (km)<input id="semiMajor" type="number" min="6600" max="9000" value="6771" /></label>
+                <label class="field">e<input id="eccentricity" type="number" min="0" max="0.2" step="0.001" value="0.001" /></label>
+                <label class="field">i (°)<input id="inclination" type="number" min="0" max="180" step="0.1" value="53" /></label>
+                <label class="field">Ω (°)<input id="raan" type="number" min="0" max="360" step="0.1" value="0" /></label>
+                <label class="field">ω (°)<input id="argPerigee" type="number" min="0" max="360" step="0.1" value="0" /></label>
+                <label class="field">M₀ (°)<input id="meanAnomaly" type="number" min="0" max="360" step="0.1" value="0" /></label>
+              </div>
+              <label class="checkbox">
+                <input id="resonanceToggle" type="checkbox" />
+                Repetición ground-track
+              </label>
+              <div class="field-columns resonance" data-hidden>
+                <label class="field">Órbitas<input id="resonanceOrbits" type="number" min="1" max="30" value="1" /></label>
+                <label class="field">Rotaciones<input id="resonanceRotations" type="number" min="1" max="30" value="1" /></label>
+              </div>
+            </section>
+            <section class="panel-group" data-section="optics" hidden>
+              <header>
+                <h2>Enlace óptico</h2>
+              </header>
+              <div class="field-columns">
+                <label class="field">Apertura satélite (m)<input id="satAperture" type="number" min="0.1" max="3" step="0.05" value="0.6" /></label>
+                <label class="field">Apertura estación (m)<input id="groundAperture" type="number" min="0.1" max="5" step="0.05" value="1.0" /></label>
+                <label class="field">λ (nm)<input id="wavelength" type="number" min="600" max="1700" step="1" value="810" /></label>
+                <label class="field">Muestras/órbita<input id="samplesPerOrbit" type="number" min="60" max="720" step="10" value="180" /></label>
+              </div>
+            </section>
+            <section class="panel-group" data-section="stations" hidden>
+              <header>
+                <h2>Estaciones</h2>
+              </header>
+              <div class="field">
+                <label for="stationSelect">Estación activa</label>
+                <select id="stationSelect"></select>
+              </div>
+              <div class="button-row">
+                <button id="btnAddStation" type="button">Nueva estación</button>
+                <button id="btnFocusStation" type="button">Enfocar</button>
+              </div>
+              <dl class="metrics" id="stationMetrics">
+                <div><dt>Distancia</dt><dd id="distanceMetric">--</dd></div>
+                <div><dt>Elevación</dt><dd id="elevationMetric">--</dd></div>
+                <div><dt>Zenit</dt><dd id="zenithMetric">--</dd></div>
+                <div><dt>Pérdida geométrica</dt><dd id="lossMetric">--</dd></div>
+                <div><dt>Doppler</dt><dd id="dopplerMetric">--</dd></div>
+              </dl>
+            </section>
           </div>
-          <div class="field">
-            <label for="epochInput">Época</label>
-            <input id="epochInput" type="datetime-local" />
-          </div>
-          <div class="field-columns">
-            <label class="field">a (km)<input id="semiMajor" type="number" min="6600" max="9000" value="6771" /></label>
-            <label class="field">e<input id="eccentricity" type="number" min="0" max="0.2" step="0.001" value="0.001" /></label>
-            <label class="field">i (°)<input id="inclination" type="number" min="0" max="180" step="0.1" value="53" /></label>
-            <label class="field">Ω (°)<input id="raan" type="number" min="0" max="360" step="0.1" value="0" /></label>
-            <label class="field">ω (°)<input id="argPerigee" type="number" min="0" max="360" step="0.1" value="0" /></label>
-            <label class="field">M₀ (°)<input id="meanAnomaly" type="number" min="0" max="360" step="0.1" value="0" /></label>
-          </div>
-          <label class="checkbox">
-            <input id="resonanceToggle" type="checkbox" />
-            Repetición ground-track
-          </label>
-          <div class="field-columns resonance" data-hidden>
-            <label class="field">Órbitas<input id="resonanceOrbits" type="number" min="1" max="30" value="1" /></label>
-            <label class="field">Rotaciones<input id="resonanceRotations" type="number" min="1" max="30" value="1" /></label>
-          </div>
-        </section>
-
-        <section class="panel-group">
-          <header>
-            <h2>Enlace óptico</h2>
-          </header>
-          <div class="field-columns">
-            <label class="field">Apertura satélite (m)<input id="satAperture" type="number" min="0.1" max="3" step="0.05" value="0.6" /></label>
-            <label class="field">Apertura estación (m)<input id="groundAperture" type="number" min="0.1" max="5" step="0.05" value="1.0" /></label>
-            <label class="field">λ (nm)<input id="wavelength" type="number" min="600" max="1700" step="1" value="810" /></label>
-            <label class="field">Muestras/órbita<input id="samplesPerOrbit" type="number" min="60" max="720" step="10" value="180" /></label>
-          </div>
-        </section>
-
-        <section class="panel-group">
-          <header>
-            <h2>Estaciones</h2>
-          </header>
-          <div class="field">
-            <label for="stationSelect">Estación activa</label>
-            <select id="stationSelect"></select>
-          </div>
-          <div class="button-row">
-            <button id="btnAddStation" type="button">Nueva estación</button>
-            <button id="btnFocusStation" type="button">Enfocar</button>
-          </div>
-          <dl class="metrics" id="stationMetrics">
-            <div><dt>Distancia</dt><dd id="distanceMetric">--</dd></div>
-            <div><dt>Elevación</dt><dd id="elevationMetric">--</dd></div>
-            <div><dt>Zenit</dt><dd id="zenithMetric">--</dd></div>
-            <div><dt>Pérdida geométrica</dt><dd id="lossMetric">--</dd></div>
-            <div><dt>Doppler</dt><dd id="dopplerMetric">--</dd></div>
-          </dl>
-        </section>
+        </div>
+        <button class="drawer-handle" type="button" data-target="primary" aria-controls="dashboard-drawer" aria-expanded="true">
+          <span class="icon" aria-hidden="true">◀</span>
+          <span class="label">Panel</span>
+        </button>
       </aside>
     </main>
   </div>

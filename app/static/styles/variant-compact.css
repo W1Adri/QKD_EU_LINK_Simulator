@@ -5,6 +5,18 @@ body[data-variant="compact"] .workspace {
   padding: 1.5rem 2rem;
 }
 
+body[data-variant="compact"] .workspace.is-primary-collapsed {
+  grid-template-columns: minmax(56px, 72px) minmax(480px, 1fr) minmax(260px, 320px);
+}
+
+body[data-variant="compact"] .workspace.is-secondary-collapsed {
+  grid-template-columns: minmax(300px, 360px) minmax(480px, 1fr) minmax(56px, 72px);
+}
+
+body[data-variant="compact"] .workspace.is-primary-collapsed.is-secondary-collapsed {
+  grid-template-columns: minmax(56px, 72px) minmax(480px, 1fr) minmax(56px, 72px);
+}
+
 body[data-variant="compact"] .control-panel,
 body[data-variant="compact"] .insight-panel {
   display: flex;
@@ -28,19 +40,8 @@ body[data-variant="compact"] .timeline {
   margin-top: auto;
 }
 
-body[data-variant="compact"] .insight-panel {
+body[data-variant="compact"] .insight-panel .drawer-body {
   max-height: calc(100vh - 220px);
-  overflow-y: auto;
-  scrollbar-width: thin;
-}
-
-body[data-variant="compact"] .insight-panel::-webkit-scrollbar {
-  width: 8px;
-}
-
-body[data-variant="compact"] .insight-panel::-webkit-scrollbar-thumb {
-  background: var(--accent-soft);
-  border-radius: 999px;
 }
 
 body[data-variant="compact"] .view-toolbar {
@@ -68,6 +69,9 @@ body[data-variant="compact"] .view-toolbar {
     grid-area: insights;
     flex-direction: row;
     flex-wrap: wrap;
+  }
+
+  body[data-variant="compact"] .insight-panel .drawer-body {
     max-height: none;
   }
 }

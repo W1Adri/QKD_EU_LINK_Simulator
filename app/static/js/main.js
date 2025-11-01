@@ -69,6 +69,82 @@ function cacheElements() {
   elements.variantLinks = document.querySelectorAll('.variant-picker a');
   elements.viewTabs = document.querySelectorAll('[data-view]');
   elements.viewGrid = document.querySelector('[data-view-container]');
+  elements.workspace = document.querySelector('.workspace');
+  elements.drawerHandles = document.querySelectorAll('.drawer-handle');
+  elements.drawerMenuItems = document.querySelectorAll('.drawer-menu-item');
+  elements.drawerPanels = document.querySelectorAll('[data-panel]');
+}
+
+function getPanelElement(panelId) {
+  if (!panelId) return null;
+  return document.querySelector(`[data-panel="${panelId}"]`);
+}
+
+function updateDrawerHandle(panel, collapsed) {
+  if (!panel) return;
+  const handle = panel.querySelector('.drawer-handle');
+  if (!handle) return;
+  const isPrimary = panel.dataset.panel === 'primary';
+  const icon = handle.querySelector('.icon');
+  const expandedIcon = isPrimary ? '◀' : '▶';
+  const collapsedIcon = isPrimary ? '▶' : '◀';
+  handle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  if (icon) {
+    icon.textContent = collapsed ? collapsedIcon : expandedIcon;
+  }
+}
+
+function setPanelCollapsed(panelId, collapsed) {
+  const panel = getPanelElement(panelId);
+  if (!panel) return;
+  panel.dataset.collapsed = collapsed ? 'true' : 'false';
+  updateDrawerHandle(panel, collapsed);
+  if (!elements.workspace) return;
+  const className = panelId === 'secondary' ? 'is-secondary-collapsed' : 'is-primary-collapsed';
+  elements.workspace.classList.toggle(className, collapsed);
+}
+
+function activateDrawerSection(panelId, requestedSectionId) {
+  const panel = getPanelElement(panelId);
+  if (!panel) return;
+  const items = panel.querySelectorAll('.drawer-menu-item');
+  const hasSection = (sectionId) => !!panel.querySelector(`.drawer-content [data-section="${sectionId}"]`);
+  let sectionId = requestedSectionId;
+  if (!sectionId || !hasSection(sectionId)) {
+    sectionId = items[0]?.dataset.sectionTarget;
+  }
+  if (!sectionId) return;
+  panel.dataset.activeSection = sectionId;
+  items.forEach((item) => {
+    const active = item.dataset.sectionTarget === sectionId;
+    item.classList.toggle('is-active', active);
+    item.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+  panel.querySelectorAll('.drawer-content [data-section]').forEach((section) => {
+    const active = section.dataset.section === sectionId;
+    section.hidden = !active;
+    section.classList.toggle('is-active', active);
+  });
+}
+
+function updatePanelsButton() {
+  if (!elements.btnTogglePanels) return;
+  const anyExpanded = Array.from(document.querySelectorAll('[data-panel]')).some(
+    (panel) => panel.dataset.collapsed !== 'true',
+  );
+  elements.btnTogglePanels.textContent = anyExpanded ? 'Ocultar paneles' : 'Mostrar paneles';
+}
+
+function initializeDrawers() {
+  if (!elements.drawerPanels) return;
+  elements.drawerPanels.forEach((panel) => {
+    const panelId = panel.dataset.panel;
+    const collapsed = panel.dataset.collapsed === 'true';
+    const activeSection = panel.dataset.activeSection;
+    activateDrawerSection(panelId, activeSection);
+    setPanelCollapsed(panelId, collapsed);
+  });
+  updatePanelsButton();
 }
 
 function applyTheme(theme) {
@@ -110,6 +186,7 @@ function initDefaults() {
   if (elements.viewGrid) {
     elements.viewGrid.dataset.mode = state.viewMode ?? 'dual';
   }
+  initializeDrawers();
 }
 
 function bindEvents() {
@@ -143,6 +220,27 @@ function bindEvents() {
     };
     inputEl.addEventListener('change', (event) => updateStateFromValue(event.target.value));
     sliderEl.addEventListener('input', (event) => updateStateFromValue(event.target.value));
+  });
+
+  Array.from(elements.drawerHandles ?? []).forEach((handle) => {
+    handle.addEventListener('click', () => {
+      const target = handle.dataset.target;
+      const panel = getPanelElement(target);
+      if (!panel) return;
+      const collapsed = panel.dataset.collapsed === 'true';
+      setPanelCollapsed(target, !collapsed);
+      updatePanelsButton();
+    });
+  });
+
+  Array.from(elements.drawerMenuItems ?? []).forEach((item) => {
+    item.addEventListener('click', () => {
+      const panel = item.closest('[data-panel]');
+      const panelId = panel?.dataset.panel;
+      const section = item.dataset.sectionTarget;
+      if (!panelId || !section) return;
+      activateDrawerSection(panelId, section);
+    });
   });
 
   elements.satelliteName?.addEventListener('input', (event) => {
@@ -215,9 +313,11 @@ function bindEvents() {
   });
 
   elements.btnTogglePanels?.addEventListener('click', () => {
-    document.querySelectorAll('[data-panel]').forEach((panel) => panel.classList.toggle('hidden'));
-    const nowHidden = elements.btnTogglePanels.textContent.includes('Ocultar');
-    elements.btnTogglePanels.textContent = nowHidden ? 'Mostrar paneles' : 'Ocultar paneles';
+    const panels = Array.from(document.querySelectorAll('[data-panel]'));
+    if (!panels.length) return;
+    const shouldCollapse = panels.some((panel) => panel.dataset.collapsed !== 'true');
+    panels.forEach((panel) => setPanelCollapsed(panel.dataset.panel, shouldCollapse));
+    updatePanelsButton();
   });
 
   elements.btnAddStation?.addEventListener('click', () => elements.stationDialog?.showModal());

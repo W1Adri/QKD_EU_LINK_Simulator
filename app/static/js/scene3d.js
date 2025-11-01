@@ -19,10 +19,15 @@ const ALT_SCALE = 1 / 4000; // scales km to scene units
 
 async function ensureThree() {
   if (THREE) return;
-  const module = await import('https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js');
-  const controlsModule = await import('https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/controls/OrbitControls.js');
-  THREE = module;
-  OrbitControls = controlsModule.OrbitControls;
+  try {
+    const module = await import('three');
+    const controlsModule = await import('three/examples/controls/OrbitControls.js');
+    THREE = module;
+    OrbitControls = controlsModule.OrbitControls;
+  } catch (error) {
+    console.error('No se pudo cargar Three.js', error);
+    throw error;
+  }
 }
 
 function latLonToCartesian(latDeg, lonDeg, altKm = 0) {
@@ -93,7 +98,12 @@ function handleResize(container) {
 
 export async function initScene(container) {
   if (!container) return null;
-  await ensureThree();
+  try {
+    await ensureThree();
+  } catch (error) {
+    container.innerHTML = '<div class="three-error">No se pudo inicializar la vista 3D.</div>';
+    return null;
+  }
 
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(window.devicePixelRatio);
