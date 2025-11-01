@@ -31,8 +31,8 @@ const stationMeshes = new Map();
 function ensureThree() {
   if (!threePromise) {
     threePromise = Promise.all([
-      import('https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js'),
-      import('https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/controls/OrbitControls.js'),
+      import('three'),
+      import('three/addons/controls/OrbitControls.js'),
     ]).then(([threeModule, controlsModule]) => {
       THREE = threeModule;
       OrbitControls = controlsModule.OrbitControls;
