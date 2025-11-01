@@ -1,0 +1,92 @@
+body[data-variant="immersive"] .workspace {
+  flex: 1;
+  display: flex;
+  padding: 0;
+  position: relative;
+}
+
+body[data-variant="immersive"] .immersive-stage {
+  position: relative;
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  overflow: hidden;
+}
+
+body[data-variant="immersive"] .immersive-3d,
+body[data-variant="immersive"] .immersive-map {
+  position: absolute;
+  inset: 0;
+  transition: opacity 280ms ease, transform 280ms ease;
+}
+
+body[data-variant="immersive"] .immersive-map {
+  mix-blend-mode: lighten;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+body[data-variant="immersive"] .immersive-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 320px));
+  gap: 1.1rem;
+  padding: 1.5rem;
+  align-content: flex-start;
+}
+
+body[data-variant="immersive"] .floating-card {
+  pointer-events: auto;
+  padding: 1rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  backdrop-filter: blur(18px);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+body[data-variant="immersive"] .floating-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+body[data-variant="immersive"] .floating-card .card-body {
+  display: grid;
+  gap: 0.75rem;
+}
+
+body[data-variant="immersive"] .floating-card .dual {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+body[data-variant="immersive"] .floating-card .dual[data-hidden] {
+  display: none;
+}
+
+body[data-variant="immersive"] .timeline-buttons button {
+  padding: 0.35rem 0.65rem;
+}
+
+body[data-variant="immersive"] .mini-chart {
+  min-height: 120px;
+}
+
+@media (max-width: 980px) {
+  body[data-variant="immersive"] .immersive-overlay {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    padding: 1.2rem;
+  }
+}
+
+@media (max-width: 720px) {
+  body[data-variant="immersive"] .immersive-overlay {
+    grid-template-columns: 1fr;
+    gap: 0.9rem;
+  }
+}
