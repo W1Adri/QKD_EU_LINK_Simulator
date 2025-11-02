@@ -1,8 +1,53 @@
 import { constants as orbitConstants, stationEcef } from './orbit.js';
-import { createEarthTexture } from './earthTexture.js';
+import { createEarthTextures, disposeEarthTextures } from './earthTexture.js';
 
 const { EARTH_RADIUS_KM, EARTH_ROT_RATE } = orbitConstants;
 const UNIT_SCALE = 1 / EARTH_RADIUS_KM;
+const EARTH_BASE_ROTATION = -Math.PI / 2;
+
+const EARTH_VERTEX_SHADER = `
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  void main() {
+    vUv = uv;
+    vNormal = normalize(normalMatrix * normal);
+    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+  }
+`;
+
+const EARTH_FRAGMENT_SHADER = `
+  uniform sampler2D dayMap;
+  uniform sampler2D nightMap;
+  uniform vec3 sunDirection;
+  uniform float ambientStrength;
+  uniform float nightStrength;
+  varying vec2 vUv;
+  varying vec3 vNormal;
+
+  vec3 toneMap(vec3 color) {
+    return color / (color + vec3(1.0));
+  }
+
+  void main() {
+    vec3 normal = normalize(vNormal);
+    vec3 lightDir = normalize(sunDirection);
+    float diffuse = max(dot(normal, lightDir), 0.0);
+    vec2 sampleUv = vec2(1.0 - vUv.x, vUv.y);
+    vec3 dayColor = texture2D(dayMap, sampleUv).rgb;
+    vec3 nightColor = texture2D(nightMap, sampleUv).rgb;
+
+    float dayMix = smoothstep(-0.2, 0.45, diffuse);
+    vec3 lit = dayColor * (ambientStrength + diffuse);
+    vec3 night = nightColor * nightStrength * (1.0 - dayMix);
+    vec3 color = mix(night, lit, dayMix);
+
+    float rim = pow(1.0 - max(dot(normal, vec3(0.0, 1.0, 0.0)), 0.0), 3.0);
+    color += vec3(rim) * 0.04;
+
+    gl_FragColor = vec4(toneMap(color), 1.0);
+  }
+`;
 
 let THREE;
 let OrbitControls;
@@ -27,6 +72,9 @@ let linkLine;
 let isReady = false;
 let earthSimulationRotation = 0;
 let passiveAtmosphereOffset = 0;
+let earthUniforms;
+let earthTextures;
+let sunLight;
 
 const stationMeshes = new Map();
 
@@ -120,30 +168,48 @@ function buildControls() {
 
 function buildLights() {
   const ambient = new THREE.AmbientLight(0xffffff, 0.65);
-  const sun = new THREE.DirectionalLight(0xffffff, 1.05);
-  sun.position.set(5, 3, 2);
+  sunLight = new THREE.DirectionalLight(0xffffff, 1.05);
+  sunLight.position.set(0, 3.5, 8);
   const rim = new THREE.DirectionalLight(0x5eead4, 0.3);
   rim.position.set(-3, -2, -5);
-  scene.add(ambient, sun, rim);
+  scene.add(ambient, sunLight, rim);
 }
 
-function buildEarth() {
+async function buildEarth() {
   earthGroup = new THREE.Group();
   earthGroup.name = 'EarthGroup';
 
   const earthGeometry = new THREE.SphereGeometry(1, 128, 128);
-  const earthMaterial = new THREE.MeshPhongMaterial({
-    color: 0x2266cc,
-    specular: 0x222222,
-    shininess: 20,
-  });
-  const texture = createEarthTexture(THREE);
-  if (texture) {
-    const maxAniso = renderer?.capabilities?.getMaxAnisotropy?.() ?? 4;
-    texture.anisotropy = Math.min(maxAniso, 8);
-    earthMaterial.map = texture;
-    earthMaterial.needsUpdate = true;
+  try {
+    earthTextures = await createEarthTextures(THREE);
+    if (earthTextures?.source) {
+      console.info(`Texturas de la Tierra cargadas (${earthTextures.source}).`);
+    }
+  } catch (error) {
+    console.error('No se pudieron cargar las texturas de la Tierra', error);
+    throw new Error('No se pudieron cargar las texturas de la Tierra.');
   }
+  const maxAniso = renderer?.capabilities?.getMaxAnisotropy?.() ?? 4;
+  if (earthTextures?.day) {
+    earthTextures.day.anisotropy = Math.min(maxAniso, 12);
+    earthTextures.day.needsUpdate = true;
+  }
+  if (earthTextures?.night) {
+    earthTextures.night.anisotropy = Math.min(maxAniso, 12);
+    earthTextures.night.needsUpdate = true;
+  }
+  earthUniforms = {
+    dayMap: { value: earthTextures?.day ?? null },
+    nightMap: { value: earthTextures?.night ?? null },
+    sunDirection: { value: new THREE.Vector3(1, 0, 0) },
+    ambientStrength: { value: 0.35 },
+    nightStrength: { value: 0.88 },
+  };
+  const earthMaterial = new THREE.ShaderMaterial({
+    uniforms: earthUniforms,
+    vertexShader: EARTH_VERTEX_SHADER,
+    fragmentShader: EARTH_FRAGMENT_SHADER,
+  });
   earthMesh = new THREE.Mesh(earthGeometry, earthMaterial);
   earthMesh.name = 'Earth';
   earthGroup.add(earthMesh);
@@ -160,6 +226,7 @@ function buildEarth() {
   earthGroup.add(atmosphereMesh);
 
   scene.add(earthGroup);
+  updateSunDirection();
 }
 
 function buildSceneGraph() {
@@ -200,11 +267,11 @@ function startAnimation() {
   passiveAtmosphereOffset = 0;
   const renderFrame = () => {
     if (earthGroup) {
-      earthGroup.rotation.y = earthSimulationRotation;
+      earthGroup.rotation.y = earthSimulationRotation + EARTH_BASE_ROTATION;
     }
     if (atmosphereMesh) {
       passiveAtmosphereOffset = (passiveAtmosphereOffset + 0.003) % (Math.PI * 2);
-      atmosphereMesh.rotation.y = earthSimulationRotation + passiveAtmosphereOffset;
+      atmosphereMesh.rotation.y = earthSimulationRotation + passiveAtmosphereOffset + EARTH_BASE_ROTATION;
     }
     controls?.update();
     renderer.render(scene, camera);
@@ -260,10 +327,10 @@ function toVector3Eci(arr) {
 
 function updateEarthRotation() {
   if (earthGroup) {
-    earthGroup.rotation.y = earthSimulationRotation;
+    earthGroup.rotation.y = earthSimulationRotation + EARTH_BASE_ROTATION;
   }
   if (atmosphereMesh) {
-    atmosphereMesh.rotation.y = earthSimulationRotation + passiveAtmosphereOffset;
+    atmosphereMesh.rotation.y = earthSimulationRotation + passiveAtmosphereOffset + EARTH_BASE_ROTATION;
   }
 }
 
@@ -274,6 +341,11 @@ export function setEarthRotationFromTime(seconds) {
     earthSimulationRotation += Math.PI * 2;
   }
   updateEarthRotation();
+}
+
+function updateSunDirection() {
+  if (!earthUniforms?.sunDirection || !sunLight) return;
+  earthUniforms.sunDirection.value.copy(sunLight.position).normalize();
 }
 
 export async function initScene(container) {
@@ -304,7 +376,7 @@ export async function initScene(container) {
     buildCamera();
     buildControls();
     buildLights();
-    buildEarth();
+    await buildEarth();
     buildSceneGraph();
 
     resizeObserver = new ResizeObserver(() => resizeRenderer());
@@ -403,9 +475,17 @@ export function setTheme(nextTheme) {
   if (nextTheme === 'dark') {
     scene.background.setHex(0x020617);
     renderer.setClearColor(0x020617, 1);
+    if (earthUniforms) {
+      earthUniforms.ambientStrength.value = 0.3;
+      earthUniforms.nightStrength.value = 1.05;
+    }
   } else {
     scene.background.setHex(0xf4f7fb);
     renderer.setClearColor(0xf4f7fb, 1);
+    if (earthUniforms) {
+      earthUniforms.ambientStrength.value = 0.4;
+      earthUniforms.nightStrength.value = 0.85;
+    }
   }
 }
 
@@ -437,6 +517,7 @@ export function disposeScene() {
   earthMesh?.material?.dispose();
   atmosphereMesh?.geometry?.dispose();
   atmosphereMesh?.material?.dispose();
+  disposeEarthTextures();
 
   scene = null;
   camera = null;
@@ -448,6 +529,9 @@ export function disposeScene() {
   satelliteMesh = null;
   stationGroup = null;
   linkLine = null;
+  earthUniforms = null;
+  earthTextures = null;
+  sunLight = null;
   containerEl = null;
   canvasEl = null;
   fallbackEl = null;

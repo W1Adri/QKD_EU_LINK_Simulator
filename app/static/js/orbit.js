@@ -1,9 +1,13 @@
-import { DEG2RAD, RAD2DEG, TWO_PI, clamp } from './utils.js';
+import { DEG2RAD, RAD2DEG, TWO_PI, clamp, haversineDistance } from './utils.js';
 
 const MU_EARTH = 398600.4418; // km^3/s^2
 const EARTH_RADIUS_KM = 6378.137;
 const EARTH_ROT_RATE = 7.2921150e-5; // rad/s
 const SIDEREAL_DAY = 86164.0905; // s
+const MIN_SEMI_MAJOR = EARTH_RADIUS_KM + 160; // ≈160 km de altitud mínima
+const MAX_SEMI_MAJOR = 45000; // límite práctico para órbitas diseñadas aquí
+const CLOSURE_SURFACE_TOL_KM = 0.25;
+const CLOSURE_CARTESIAN_TOL_KM = 0.1;
 
 function solveKepler(meanAnomaly, eccentricity, tolerance = 1e-8, maxIter = 20) {
   let E = meanAnomaly;
@@ -203,14 +207,72 @@ export function propagateOrbit(settings) {
   const argPerigee = orbital.argPerigee * DEG2RAD;
   const meanAnomaly0 = orbital.meanAnomaly * DEG2RAD;
 
+  const resonanceInfo = {
+    requested: Boolean(resonance.enabled),
+    applied: false,
+    ratio: resonance.enabled ? { orbits: resonance.orbits, rotations: resonance.rotations } : null,
+    warnings: [],
+    semiMajorKm: null,
+    targetPeriodSeconds: null,
+    periodSeconds: null,
+    perigeeKm: null,
+    apogeeKm: null,
+    closureSurfaceKm: null,
+    closureCartesianKm: null,
+    latDriftDeg: null,
+    lonDriftDeg: null,
+    closed: false,
+  };
+
   let semiMajor = orbital.semiMajor;
   if (resonance.enabled) {
-    semiMajor = computeSemiMajorWithResonance(resonance.orbits, resonance.rotations);
+    const safeOrbits = Math.max(1, resonance.orbits || 1);
+    const safeRotations = Math.max(1, resonance.rotations || 1);
+    const targetPeriod = (safeRotations / safeOrbits) * SIDEREAL_DAY;
+    resonanceInfo.targetPeriodSeconds = targetPeriod;
+    let computedSemiMajor = computeSemiMajorWithResonance(safeOrbits, safeRotations);
+    resonanceInfo.semiMajorKm = computedSemiMajor;
+    let applied = true;
+
+    if (computedSemiMajor < MIN_SEMI_MAJOR) {
+      resonanceInfo.warnings.push(
+        `La resonancia ${safeOrbits}:${safeRotations} requiere un semieje mayor inferior al mínimo operativo (${MIN_SEMI_MAJOR.toFixed(0)} km). ` +
+        'Se utiliza el límite inferior, perdiendo la repetición exacta.'
+      );
+      computedSemiMajor = MIN_SEMI_MAJOR;
+      applied = false;
+    }
+    if (computedSemiMajor > MAX_SEMI_MAJOR) {
+      resonanceInfo.warnings.push(
+        `La resonancia ${safeOrbits}:${safeRotations} supera el límite máximo (${MAX_SEMI_MAJOR.toFixed(0)} km). ` +
+        'Se utiliza el límite superior sin resonancia exacta.'
+      );
+      computedSemiMajor = MAX_SEMI_MAJOR;
+      applied = false;
+    }
+
+    const perigee = computedSemiMajor * (1 - orbital.eccentricity);
+    const apogee = computedSemiMajor * (1 + orbital.eccentricity);
+    resonanceInfo.perigeeKm = perigee;
+    resonanceInfo.apogeeKm = apogee;
+    if (perigee <= EARTH_RADIUS_KM + 10) {
+      resonanceInfo.warnings.push('El perigeo cae por debajo de la superficie terrestre. Reduce la excentricidad o ajusta la resonancia.');
+      applied = false;
+    }
+
+    resonanceInfo.applied = applied;
+    semiMajor = computedSemiMajor;
+  } else {
+    semiMajor = clamp(semiMajor, MIN_SEMI_MAJOR, MAX_SEMI_MAJOR);
+    const perigee = semiMajor * (1 - orbital.eccentricity);
+    const apogee = semiMajor * (1 + orbital.eccentricity);
+    resonanceInfo.perigeeKm = perigee;
+    resonanceInfo.apogeeKm = apogee;
   }
-  semiMajor = clamp(semiMajor, 6600, 9000);
 
   const meanMotion = Math.sqrt(MU_EARTH / (semiMajor ** 3));
   const orbitPeriod = TWO_PI / meanMotion;
+  resonanceInfo.periodSeconds = orbitPeriod;
   const totalOrbits = resonance.enabled ? Math.max(1, resonance.orbits) : 3;
   const totalTime = orbitPeriod * totalOrbits;
   const totalSamples = Math.max(2, Math.round(samplesPerOrbit * totalOrbits));
@@ -240,6 +302,45 @@ export function propagateOrbit(settings) {
 
   const groundTrack = dataPoints.map((p) => ({ lat: p.lat, lon: p.lon }));
 
+  if (dataPoints.length >= 2) {
+    const start = dataPoints[0];
+    const end = dataPoints[dataPoints.length - 1];
+    const diffX = end.rEcef[0] - start.rEcef[0];
+    const diffY = end.rEcef[1] - start.rEcef[1];
+    const diffZ = end.rEcef[2] - start.rEcef[2];
+    const cartesianGap = Math.sqrt(diffX ** 2 + diffY ** 2 + diffZ ** 2);
+    resonanceInfo.closureCartesianKm = cartesianGap;
+    const surfaceGap = haversineDistance(start.lat, start.lon, end.lat, end.lon, EARTH_RADIUS_KM);
+    resonanceInfo.closureSurfaceKm = surfaceGap;
+    resonanceInfo.latDriftDeg = end.lat - start.lat;
+    const lonDiff = ((end.lon - start.lon + 540) % 360) - 180;
+    resonanceInfo.lonDriftDeg = lonDiff;
+    if (resonance.enabled && surfaceGap > 0.5) {
+      resonanceInfo.warnings.push(`La trayectoria no cierra: desfase en superficie de ${surfaceGap.toFixed(2)} km.`);
+      resonanceInfo.applied = false;
+    }
+    if (resonance.enabled && resonanceInfo.applied) {
+      const surfaceOk = Number.isFinite(surfaceGap) && surfaceGap <= CLOSURE_SURFACE_TOL_KM;
+      const cartesianOk = Number.isFinite(cartesianGap) && cartesianGap <= CLOSURE_CARTESIAN_TOL_KM;
+      resonanceInfo.closed = surfaceOk && cartesianOk;
+      if (resonanceInfo.closed) {
+        const lastIndex = dataPoints.length - 1;
+        if (lastIndex > 0) {
+          const startClone = {
+            ...dataPoints[0],
+            t: dataPoints[lastIndex].t,
+            rEci: Array.isArray(dataPoints[0].rEci) ? [...dataPoints[0].rEci] : dataPoints[0].rEci,
+            vEci: Array.isArray(dataPoints[0].vEci) ? [...dataPoints[0].vEci] : dataPoints[0].vEci,
+            rEcef: Array.isArray(dataPoints[0].rEcef) ? [...dataPoints[0].rEcef] : dataPoints[0].rEcef,
+            vEcef: Array.isArray(dataPoints[0].vEcef) ? [...dataPoints[0].vEcef] : dataPoints[0].vEcef,
+          };
+          dataPoints[lastIndex] = startClone;
+          groundTrack[groundTrack.length - 1] = { lat: startClone.lat, lon: startClone.lon };
+        }
+      }
+    }
+  }
+
   return {
     semiMajor,
     orbitPeriod,
@@ -247,6 +348,7 @@ export function propagateOrbit(settings) {
     timeline,
     dataPoints,
     groundTrack,
+    resonance: resonanceInfo,
   };
 }
 
@@ -290,4 +392,6 @@ export const constants = {
   EARTH_RADIUS_KM,
   EARTH_ROT_RATE,
   SIDEREAL_DAY,
+  MIN_SEMI_MAJOR,
+  MAX_SEMI_MAJOR,
 };

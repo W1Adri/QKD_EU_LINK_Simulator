@@ -94,8 +94,39 @@ export function invalidateSize() {
 
 export function updateGroundTrack(points) {
   if (!orbitLayer) return;
-  const latLngs = points.map((p) => [p.lat, p.lon]);
-  orbitLayer.setLatLngs(latLngs);
+  if (!Array.isArray(points) || points.length === 0) {
+    orbitLayer.setLatLngs([]);
+    return;
+  }
+
+  const segments = [];
+  let current = [];
+  let prevLon = null;
+
+  points.forEach((point) => {
+    if (!Number.isFinite(point?.lat) || !Number.isFinite(point?.lon)) {
+      return;
+    }
+    const lon = ((point.lon + 540) % 360) - 180;
+    if (prevLon !== null) {
+      const delta = Math.abs(lon - prevLon);
+      if (delta > 180) {
+        if (current.length) {
+          segments.push(current);
+        }
+        current = [];
+      }
+    }
+    current.push([point.lat, lon]);
+    prevLon = lon;
+  });
+
+  if (current.length) {
+    segments.push(current);
+  }
+
+  const latLngs = segments.length > 1 ? segments : segments[0];
+  orbitLayer.setLatLngs(latLngs ?? []);
 }
 
 export function updateSatellitePosition(point, footprintKm = 0) {

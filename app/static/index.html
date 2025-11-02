@@ -56,8 +56,8 @@
             </div>
             <div class="field-group">
               <label for="semiMajor">Semieje mayor a (km)</label>
-              <input id="semiMajor" type="number" step="1" min="6600" max="9000" value="6771" />
-              <input id="semiMajorSlider" type="range" min="6600" max="9000" value="6771" />
+              <input id="semiMajor" type="number" step="1" min="6500" max="45000" value="6771" />
+              <input id="semiMajorSlider" type="range" min="6500" max="45000" value="6771" />
             </div>
             <div class="field-group">
               <label for="eccentricity">Excentricidad e</label>
@@ -109,6 +109,8 @@
             </div>
             <p class="hint" hidden>Utiliza combinaciones pequeñas (por ejemplo 15:1) para órbitas periódicas estables.</p>
           </section>
+
+          <div id="orbitMessages" class="panel-messages" hidden></div>
 
           <section class="panel-section" data-section="optics">
             <header>

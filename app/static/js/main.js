@@ -43,10 +43,11 @@ import {
   formatDistanceKm,
   formatLoss,
   formatDoppler,
+  formatDuration,
   smoothArray,
 } from './utils.js';
 
-const { EARTH_RADIUS_KM } = orbitConstants;
+const { EARTH_RADIUS_KM, MIN_SEMI_MAJOR, MAX_SEMI_MAJOR } = orbitConstants;
 
 const elements = {};
 let mapInstance;
@@ -71,7 +72,7 @@ function cacheElements() {
     'btnStepBack', 'btnStepForward', 'btnResetTime', 'timeWarp', 'btnTheme', 'btnPanelToggle',
     'btnMapStyle', 'panelReveal', 'panelResizer', 'stationSelect', 'btnAddStation', 'btnFocusStation', 'timeLabel',
     'elevationLabel', 'lossLabel', 'distanceMetric', 'elevationMetric', 'zenithMetric', 'lossMetric',
-    'dopplerMetric', 'threeContainer', 'mapContainer', 'chartLoss', 'chartElevation', 'chartDistance',
+    'dopplerMetric', 'threeContainer', 'mapContainer', 'chartLoss', 'chartElevation', 'chartDistance', 'orbitMessages',
     'stationDialog', 'stationName', 'stationLat', 'stationLon', 'stationAperture', 'stationSave',
   ];
   ids.forEach((id) => {
@@ -185,6 +186,17 @@ function updateResonanceUI(enabled) {
   if (elements.resonanceHint) {
     elements.resonanceHint.hidden = !enabled;
   }
+  ['semiMajor', 'semiMajorSlider'].forEach((id) => {
+    const control = elements[id];
+    if (!control) return;
+    control.toggleAttribute('disabled', enabled);
+    control.classList.toggle('is-readonly', enabled);
+    if (enabled) {
+      control.setAttribute('aria-disabled', 'true');
+    } else {
+      control.removeAttribute('aria-disabled');
+    }
+  });
 }
 
 function initDefaults() {
@@ -200,6 +212,14 @@ function initDefaults() {
     panelWidth = rect.width;
     lastExpandedPanelWidth = rect.width;
     applyPanelWidth(rect.width);
+  }
+  if (elements.semiMajor) {
+    elements.semiMajor.min = String(MIN_SEMI_MAJOR);
+    elements.semiMajor.max = String(MAX_SEMI_MAJOR);
+  }
+  if (elements.semiMajorSlider) {
+    elements.semiMajorSlider.min = String(MIN_SEMI_MAJOR);
+    elements.semiMajorSlider.max = String(MAX_SEMI_MAJOR);
   }
   if (elements.timeSlider) {
     elements.timeSlider.min = 0;
@@ -226,7 +246,7 @@ function initDefaults() {
 
 function bindEvents() {
   const sliderPairs = [
-    ['semiMajor', 'semiMajorSlider', (value) => clamp(Number(value), 6600, 9000), 'orbital.semiMajor'],
+    ['semiMajor', 'semiMajorSlider', (value) => clamp(Number(value), MIN_SEMI_MAJOR, MAX_SEMI_MAJOR), 'orbital.semiMajor'],
     ['eccentricity', 'eccentricitySlider', (value) => clamp(Number(value), 0, 0.2), 'orbital.eccentricity'],
     ['inclination', 'inclinationSlider', (value) => clamp(Number(value), 0, 180), 'orbital.inclination'],
     ['raan', 'raanSlider', (value) => clamp(Number(value), 0, 360), 'orbital.raan'],
@@ -469,11 +489,20 @@ function recomputeOrbit(force = false) {
   setTimeline({ timeline: orbitData.timeline, totalSeconds: orbitData.totalTime });
   const metrics = computeStationMetrics(orbitData.dataPoints, getSelectedStation(), state.optical);
   setComputed({
+    semiMajor: orbitData.semiMajor,
     orbitPeriod: orbitData.orbitPeriod,
     dataPoints: orbitData.dataPoints,
     groundTrack: orbitData.groundTrack,
     metrics,
+    resonance: orbitData.resonance,
   });
+  if (elements.semiMajor) {
+    elements.semiMajor.value = orbitData.semiMajor.toFixed(0);
+  }
+  if (elements.semiMajorSlider) {
+    elements.semiMajorSlider.value = orbitData.semiMajor.toFixed(0);
+  }
+  renderOrbitMessages();
   updateOrbitPath(orbitData.dataPoints);
   lastMetricsSignature = metricsSignature(state);
   flyToOrbit(orbitData.groundTrack);
@@ -490,6 +519,7 @@ function recomputeMetricsOnly(force = false) {
     ...state.computed,
     metrics,
   });
+  renderOrbitMessages();
   scheduleVisualUpdate();
 }
 
@@ -509,6 +539,7 @@ function scheduleVisualUpdate() {
   updateLink3D(current, station);
   renderStations2D(state.stations.list, state.stations.selectedId);
   updateMetricsUI(index);
+  renderOrbitMessages();
 }
 
 function computeFootprint(altitudeKm) {
@@ -591,6 +622,71 @@ function drawSparklines() {
   draw(elements.chartLoss, smoothArray(state.computed.metrics.lossDb, 7), '#7c3aed');
   draw(elements.chartElevation, smoothArray(state.computed.metrics.elevationDeg, 5), '#0ea5e9');
   draw(elements.chartDistance, smoothArray(state.computed.metrics.distanceKm, 5), '#22c55e');
+}
+
+function renderOrbitMessages() {
+  if (!elements.orbitMessages) return;
+  const info = state.computed?.resonance ?? {};
+  const lines = [];
+  const ratio = info?.ratio;
+  const requested = Boolean(info?.requested);
+  const applied = info?.applied;
+  const formatKm = (value) => `${Number(value).toLocaleString('es-ES', { maximumFractionDigits: 0 })} km`;
+
+  if (requested && ratio) {
+    const label = `${ratio.orbits}:${ratio.rotations}`;
+    if (applied !== false) {
+      lines.push(`<p><strong>Resonancia ${label}</strong> · ground-track repetido tras ${ratio.orbits} órbitas.</p>`);
+    } else {
+      lines.push(`<p><strong>Intento de resonancia ${label}</strong> · ajusta los parámetros o revisa los avisos.</p>`);
+    }
+  }
+
+  const semiMajorKm = state.computed?.semiMajor ?? info?.semiMajorKm;
+  if (semiMajorKm) {
+    lines.push(`<p>Semieje mayor aplicado: <strong>${formatKm(semiMajorKm)}</strong></p>`);
+  }
+
+  if (info?.periodSeconds) {
+    lines.push(`<p>Periodo orbital: ${formatDuration(info.periodSeconds)}</p>`);
+  }
+
+  if (info?.perigeeKm != null && info?.apogeeKm != null) {
+    const perigeeAlt = info.perigeeKm - EARTH_RADIUS_KM;
+    const apogeeAlt = info.apogeeKm - EARTH_RADIUS_KM;
+    lines.push(`<p>Altitudes perigeo/apogeo: ${perigeeAlt.toFixed(0)} km / ${apogeeAlt.toFixed(0)} km</p>`);
+  }
+
+  if (info?.closureSurfaceKm != null) {
+    const gap = info.closureSurfaceKm;
+    const closureText = gap < 0.01 ? '&lt; 0.01 km' : `${gap.toFixed(2)} km`;
+    if (requested && info.closed) {
+      lines.push(`<p>✔️ Ground-track cerrado (Δ ${closureText}).</p>`);
+    } else if (requested) {
+      lines.push(`<p class="warning">⚠️ Desfase tras la resonancia: ${closureText}</p>`);
+    } else {
+      lines.push(`<p>Cierre del ground-track: ${closureText}</p>`);
+    }
+  }
+
+  if ((info?.latDriftDeg ?? 0) !== 0 || (info?.lonDriftDeg ?? 0) !== 0) {
+    const lat = info.latDriftDeg ?? 0;
+    const lon = info.lonDriftDeg ?? 0;
+    if (Math.abs(lat) > 1e-3 || Math.abs(lon) > 1e-3) {
+      lines.push(`<p>Deriva tras el ciclo: Δlat ${lat.toFixed(3)}°, Δlon ${lon.toFixed(3)}°.</p>`);
+    }
+  }
+
+  if (Array.isArray(info?.warnings)) {
+    info.warnings.forEach((warning) => {
+      if (warning) {
+        lines.push(`<p class="warning">⚠️ ${warning}</p>`);
+      }
+    });
+  }
+
+  elements.orbitMessages.innerHTML = lines.join('');
+  elements.orbitMessages.hidden = lines.length === 0;
 }
 
 function playbackLoop(timestamp) {

@@ -262,6 +262,30 @@ button.ghost:hover {
   font-size: 0.9rem;
 }
 
+.panel-messages {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.panel-messages p {
+  margin: 0;
+}
+
+.panel-messages p strong {
+  color: var(--text-primary);
+}
+
+.panel-messages p.warning {
+  color: var(--accent);
+}
+
 .field,
 .field-group {
   display: flex;
@@ -300,6 +324,17 @@ select:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+input.is-readonly {
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+input[type="range"].is-readonly {
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 input[type="range"] {
