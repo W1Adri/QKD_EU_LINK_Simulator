@@ -5,68 +5,9 @@ const { EARTH_RADIUS_KM } = orbitConstants;
 const UNIT_SCALE = 1 / EARTH_RADIUS_KM;
 const EARTH_TEXTURE_URL = `data:image/png;base64,${EARTH_TEXTURE_BASE64}`;
 
-const diagnostics = {
-  steps: [],
-  lastStep: null,
-  lastError: null,
-};
-
-function pushDiagnostics(entry) {
-  diagnostics.lastStep = { ...entry, timestamp: Date.now() };
-  diagnostics.steps.push(diagnostics.lastStep);
-  if (diagnostics.steps.length > 100) {
-    diagnostics.steps.shift();
-  }
-  if (typeof window !== 'undefined') {
-    window.__scene3dDiagnostics = diagnostics;
-  }
-}
-
-function recordStep(label, status, detail) {
-  pushDiagnostics({ label, status, detail });
-  const prefix = `[scene3d] ${label}`;
-  if (status === 'start') {
-    console.debug(`${prefix} → inicio`, detail || '');
-  } else if (status === 'ok') {
-    console.debug(`${prefix} ✓ completado`, detail || '');
-  } else if (status === 'skip') {
-    console.debug(`${prefix} ↷ omitido`, detail || '');
-  } else {
-    if (detail instanceof Error) {
-      diagnostics.lastError = {
-        step: detail.step || label,
-        message: detail.message,
-        stack: detail.stack,
-      };
-    }
-    console.error(`${prefix} ✖ error`, detail);
-  }
-}
-
-async function runStep(label, fn) {
-  recordStep(label, 'start');
-  try {
-    const result = await fn();
-    recordStep(label, 'ok', result);
-    return result;
-  } catch (error) {
-    const wrapped = error instanceof Error ? error : new Error(String(error || 'Error desconocido'));
-    if (!wrapped.step) {
-      wrapped.step = label;
-    }
-    diagnostics.lastError = {
-      step: wrapped.step,
-      message: wrapped.message,
-      stack: wrapped.stack,
-    };
-    recordStep(label, 'error', wrapped);
-    throw wrapped;
-  }
-}
-
 let THREE;
 let OrbitControls;
-let threePromise;
+let importPromise;
 
 let containerEl;
 let canvasEl;
@@ -75,6 +16,8 @@ let renderer;
 let scene;
 let camera;
 let controls;
+let resizeObserver;
+let animationHandle;
 let earthGroup;
 let earthMesh;
 let atmosphereMesh;
@@ -82,170 +25,86 @@ let orbitLine;
 let satelliteMesh;
 let stationGroup;
 let linkLine;
-let resizeObserver;
-let frameHandle;
-let usingAnimationLoop = false;
 let isReady = false;
 
 const stationMeshes = new Map();
 
-function ensureThree() {
-  if (!threePromise) {
-    threePromise = Promise.all([
+async function ensureThree() {
+  if (!importPromise) {
+    importPromise = Promise.all([
       import('three'),
       import('three/addons/controls/OrbitControls.js'),
     ]).then(([threeModule, controlsModule]) => {
       THREE = threeModule.default ?? threeModule;
       OrbitControls =
-        controlsModule.OrbitControls || controlsModule.default || controlsModule;
+        controlsModule.OrbitControls ?? controlsModule.default ?? controlsModule;
       if (typeof OrbitControls !== 'function') {
-        throw new Error('OrbitControls no está disponible en el paquete importado.');
+        throw new Error('OrbitControls no está disponible.');
       }
     });
   }
-  return threePromise;
+  return importPromise;
 }
 
-function toVector3(arr) {
-  if (!THREE) return null;
-  return new THREE.Vector3(arr[0] * UNIT_SCALE, arr[1] * UNIT_SCALE, arr[2] * UNIT_SCALE);
-}
-
-function loadTexture(url) {
-  return new Promise((resolve, reject) => {
-    const loader = new THREE.TextureLoader();
-    loader.setCrossOrigin('anonymous');
-    loader.load(
-      url,
-      (texture) => {
-        recordStep('Textura cargada', 'ok', { url });
-        resolve(texture);
-      },
-      undefined,
-      (error) => {
-        const reason =
-          error instanceof Error
-            ? error
-            : new Error(`Fallo al cargar textura ${url}`);
-        recordStep('Textura fallida', 'error', reason);
-        reject(error);
-      }
-    );
-  });
-}
-
-async function buildEarth() {
-  const geometry = new THREE.SphereGeometry(1, 96, 96);
-  const material = new THREE.MeshPhongMaterial({
-    color: 0x4060ff,
-    shininess: 8,
-    specular: new THREE.Color(0x333333),
-  });
-
-  try {
-    const diffuse = await loadTexture(EARTH_TEXTURE_URL);
-    diffuse.colorSpace = THREE.SRGBColorSpace;
-    material.map = diffuse;
-    material.needsUpdate = true;
-  } catch (error) {
-    console.warn('Fallo al cargar textura del planeta:', error);
+function hideFallback() {
+  if (fallbackEl) {
+    fallbackEl.hidden = true;
+    fallbackEl.setAttribute('aria-hidden', 'true');
   }
-
-  earthMesh = new THREE.Mesh(geometry, material);
-  earthMesh.name = 'Earth';
-
-  const glowGeometry = new THREE.SphereGeometry(1.015, 64, 64);
-  const glowMaterial = new THREE.MeshBasicMaterial({
-    color: 0x3388ff,
-    transparent: true,
-    opacity: 0.16,
-    side: THREE.BackSide,
-  });
-  atmosphereMesh = new THREE.Mesh(glowGeometry, glowMaterial);
-  atmosphereMesh.name = 'Atmosphere';
-
-  earthGroup = new THREE.Group();
-  earthGroup.add(earthMesh);
-  earthGroup.add(atmosphereMesh);
-  return earthGroup;
+  if (canvasEl) {
+    canvasEl.classList.remove('is-hidden');
+    canvasEl.removeAttribute('aria-hidden');
+  }
 }
 
-function setupRenderer() {
-  if (!containerEl) {
-    throw new Error('No existe contenedor para inicializar el renderizador.');
+function showFallback(message) {
+  if (fallbackEl) {
+    fallbackEl.textContent = message || 'No se pudo inicializar la escena 3D.';
+    fallbackEl.hidden = false;
+    fallbackEl.setAttribute('aria-hidden', 'false');
   }
-  if (!canvasEl) {
-    throw new Error('No se encontró el canvas exclusivo para la vista 3D.');
+  if (canvasEl) {
+    canvasEl.classList.add('is-hidden');
+    canvasEl.setAttribute('aria-hidden', 'true');
   }
+}
 
-  canvasEl.classList.remove('is-hidden');
-  canvasEl.setAttribute('aria-hidden', 'false');
-
+function resizeRenderer() {
+  if (!renderer || !containerEl) return;
   const width = Math.max(containerEl.clientWidth, 1);
   const height = Math.max(containerEl.clientHeight, 1);
-  if (canvasEl.width !== width || canvasEl.height !== height) {
-    canvasEl.width = width;
-    canvasEl.height = height;
+  renderer.setSize(width, height, false);
+  if (camera) {
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
   }
+}
 
-  const contextAttributes = {
-    alpha: true,
-    antialias: true,
-    depth: true,
-    stencil: false,
-    preserveDrawingBuffer: false,
-    powerPreference: 'high-performance',
-  };
-
-  let gl = canvasEl.getContext('webgl2', contextAttributes);
-  if (!gl) {
-    gl =
-      canvasEl.getContext('webgl', contextAttributes) ||
-      canvasEl.getContext('experimental-webgl', contextAttributes);
-  }
-
-  if (!gl) {
-    throw new Error('No se pudo obtener un contexto WebGL del canvas.');
-  }
-
+function buildRenderer() {
   renderer = new THREE.WebGLRenderer({
     canvas: canvasEl,
-    context: gl,
     antialias: true,
     alpha: true,
   });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.setPixelRatio(window.devicePixelRatio || 1);
-  renderer.setClearColor(0x0f172a, 1);
-  renderer.setSize(width, height, false);
-
+  resizeRenderer();
   canvasEl.addEventListener('webglcontextlost', (event) => {
     event.preventDefault();
-    if (!usingAnimationLoop && frameHandle) {
-      window.cancelAnimationFrame(frameHandle);
-      frameHandle = null;
-    }
-    usingAnimationLoop = false;
-    showFallback('Se perdió el contexto WebGL. Recarga la página para reiniciar la vista 3D.');
+    cancelAnimation();
+    showFallback('Se perdió el contexto WebGL. Recarga para reintentar.');
     isReady = false;
   });
-
-  return {
-    width,
-    height,
-    contextType: gl instanceof WebGL2RenderingContext ? 'webgl2' : 'webgl',
-  };
 }
 
-function setupCamera() {
+function buildCamera() {
   const width = Math.max(containerEl.clientWidth, 1);
   const height = Math.max(containerEl.clientHeight, 1);
   camera = new THREE.PerspectiveCamera(45, width / height, 0.01, 50);
   camera.position.set(0, 2.6, 4.4);
-  return { width, height, near: camera.near, far: camera.far };
 }
 
-function setupControls() {
+function buildControls() {
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
@@ -255,28 +114,60 @@ function setupControls() {
   controls.rotateSpeed = 0.6;
   controls.zoomSpeed = 0.8;
   controls.target.set(0, 0, 0);
-  return {
-    minDistance: controls.minDistance,
-    maxDistance: controls.maxDistance,
-    rotateSpeed: controls.rotateSpeed,
-  };
+  controls.update();
 }
 
-function setupLights() {
-  const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-  const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
-  keyLight.position.set(5, 3, 2);
-  const rimLight = new THREE.DirectionalLight(0x7dd3fc, 0.4);
-  rimLight.position.set(-3, -2, -4);
-  scene.add(ambient, keyLight, rimLight);
-  return {
-    ambientIntensity: ambient.intensity,
-    keyPosition: keyLight.position.toArray(),
-    rimPosition: rimLight.position.toArray(),
-  };
+function buildLights() {
+  const ambient = new THREE.AmbientLight(0xffffff, 0.65);
+  const sun = new THREE.DirectionalLight(0xffffff, 1.05);
+  sun.position.set(5, 3, 2);
+  const rim = new THREE.DirectionalLight(0x5eead4, 0.3);
+  rim.position.set(-3, -2, -5);
+  scene.add(ambient, sun, rim);
 }
 
-function setupSceneGraph() {
+function buildEarth() {
+  earthGroup = new THREE.Group();
+
+  const earthGeometry = new THREE.SphereGeometry(1, 128, 128);
+  const earthMaterial = new THREE.MeshPhongMaterial({
+    color: 0x2266cc,
+    specular: 0x222222,
+    shininess: 20,
+  });
+  earthMesh = new THREE.Mesh(earthGeometry, earthMaterial);
+  earthMesh.name = 'Earth';
+  earthGroup.add(earthMesh);
+
+  const loader = new THREE.TextureLoader();
+  loader.load(
+    EARTH_TEXTURE_URL,
+    (texture) => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      earthMaterial.map = texture;
+      earthMaterial.needsUpdate = true;
+    },
+    undefined,
+    () => {
+      // Si la textura falla se mantiene el color base.
+    }
+  );
+
+  const atmosphereGeometry = new THREE.SphereGeometry(1.02, 96, 96);
+  const atmosphereMaterial = new THREE.MeshBasicMaterial({
+    color: 0x60a5fa,
+    transparent: true,
+    opacity: 0.16,
+    side: THREE.BackSide,
+  });
+  atmosphereMesh = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
+  atmosphereMesh.name = 'Atmosphere';
+  earthGroup.add(atmosphereMesh);
+
+  scene.add(earthGroup);
+}
+
+function buildSceneGraph() {
   orbitLine = new THREE.Line(
     new THREE.BufferGeometry(),
     new THREE.LineBasicMaterial({ color: 0x7c3aed, linewidth: 2 })
@@ -285,7 +176,11 @@ function setupSceneGraph() {
 
   linkLine = new THREE.Line(
     new THREE.BufferGeometry(),
-    new THREE.LineDashedMaterial({ color: 0x38bdf8, dashSize: 0.05, gapSize: 0.025 })
+    new THREE.LineDashedMaterial({
+      color: 0x38bdf8,
+      dashSize: 0.05,
+      gapSize: 0.03,
+    })
   );
   linkLine.visible = false;
 
@@ -295,69 +190,46 @@ function setupSceneGraph() {
     metalness: 0.2,
     roughness: 0.4,
   });
-  satelliteMesh = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 16), satMaterial);
+  satelliteMesh = new THREE.Mesh(new THREE.SphereGeometry(0.03, 20, 20), satMaterial);
   satelliteMesh.visible = false;
 
   stationGroup = new THREE.Group();
 
   scene.add(orbitLine, linkLine, satelliteMesh, stationGroup);
-  return {
-    orbitMaterial: orbitLine.material.type,
-    linkMaterial: linkLine.material.type,
-    stationCount: stationGroup.children.length,
-  };
 }
 
-function onResize() {
-  if (!renderer || !camera || !containerEl) return;
-  const width = Math.max(containerEl.clientWidth, 1);
-  const height = Math.max(containerEl.clientHeight, 1);
-  renderer.setSize(width, height, false);
-  camera.aspect = width / height;
-  camera.updateProjectionMatrix();
-  return { width, height };
-}
-
-function startRendering() {
-  if (!renderer) return;
-  if (frameHandle) {
-    window.cancelAnimationFrame(frameHandle);
-    frameHandle = null;
-  }
+function startAnimation() {
+  cancelAnimation();
   const renderFrame = () => {
     if (earthMesh) {
-      earthMesh.rotation.y += 0.00025;
-      if (atmosphereMesh) {
-        atmosphereMesh.rotation.y += 0.0002;
-      }
+      earthMesh.rotation.y += 0.0003;
+    }
+    if (atmosphereMesh) {
+      atmosphereMesh.rotation.y += 0.00026;
     }
     controls?.update();
     renderer.render(scene, camera);
+    animationHandle = window.requestAnimationFrame(renderFrame);
   };
+  animationHandle = window.requestAnimationFrame(renderFrame);
+}
 
-  if (typeof renderer.setAnimationLoop === 'function') {
-    usingAnimationLoop = true;
-    renderer.setAnimationLoop(renderFrame);
-  } else {
-    usingAnimationLoop = false;
-    const loop = () => {
-      renderFrame();
-      frameHandle = window.requestAnimationFrame(loop);
-    };
-    frameHandle = window.requestAnimationFrame(loop);
+function cancelAnimation() {
+  if (animationHandle) {
+    window.cancelAnimationFrame(animationHandle);
+    animationHandle = null;
   }
-  return { usingAnimationLoop };
 }
 
 function ensureStationMesh(station) {
   if (!stationMeshes.has(station.id)) {
-    const baseMaterial = new THREE.MeshStandardMaterial({
+    const material = new THREE.MeshStandardMaterial({
       color: 0x0ea5e9,
       emissive: 0x082f49,
       metalness: 0.1,
       roughness: 0.8,
     });
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.025, 14, 14), baseMaterial);
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.025, 14, 14), material);
     mesh.name = `station-${station.id}`;
     stationGroup.add(mesh);
     stationMeshes.set(station.id, mesh);
@@ -365,9 +237,9 @@ function ensureStationMesh(station) {
   return stationMeshes.get(station.id);
 }
 
-function clearStations(exceptIds) {
+function clearStations(keepIds) {
   Array.from(stationMeshes.keys()).forEach((id) => {
-    if (!exceptIds.has(id)) {
+    if (!keepIds.has(id)) {
       const mesh = stationMeshes.get(id);
       stationGroup.remove(mesh);
       mesh.geometry.dispose();
@@ -377,118 +249,51 @@ function clearStations(exceptIds) {
   });
 }
 
-function hideFallback() {
-  if (fallbackEl) {
-    fallbackEl.hidden = true;
-  }
-  if (canvasEl) {
-    canvasEl.classList.remove('is-hidden');
-    canvasEl.setAttribute('aria-hidden', 'false');
-  }
-  recordStep('Ocultar fallback', 'skip', 'Se muestra el lienzo 3D.');
-}
-
-function showFallback(message) {
-  if (renderer && typeof renderer.setAnimationLoop === 'function') {
-    renderer.setAnimationLoop(null);
-  }
-  if (!usingAnimationLoop && frameHandle) {
-    window.cancelAnimationFrame(frameHandle);
-    frameHandle = null;
-  }
-  usingAnimationLoop = false;
-  if (fallbackEl) {
-    let finalMessage = message || 'No se pudo inicializar la escena 3D.';
-    if (diagnostics.lastError) {
-      const { step, message: errorMessage } = diagnostics.lastError;
-      const parts = [];
-      if (step) {
-        parts.push(`Paso: ${step}`);
-      }
-      if (errorMessage && (!message || !message.includes(errorMessage))) {
-        parts.push(`Detalle: ${errorMessage}`);
-      }
-      if (parts.length) {
-        finalMessage = `${finalMessage} (${parts.join(' | ')})`;
-      }
-    }
-    fallbackEl.textContent = finalMessage;
-    fallbackEl.hidden = false;
-  }
-  if (canvasEl) {
-    canvasEl.classList.add('is-hidden');
-    canvasEl.setAttribute('aria-hidden', 'true');
-  }
-  const fallbackError = (() => {
-    if (diagnostics.lastError) {
-      const error = new Error(diagnostics.lastError.message || message || 'Fallback activado');
-      error.step = diagnostics.lastError.step;
-      if (diagnostics.lastError.stack) {
-        error.stack = diagnostics.lastError.stack;
-      }
-      return error;
-    }
-    return new Error(message || 'Fallback activado');
-  })();
-  recordStep('Mostrar fallback', 'error', fallbackError);
+function toVector3(arr) {
+  if (!THREE || !Array.isArray(arr)) return null;
+  return new THREE.Vector3(arr[0] * UNIT_SCALE, arr[1] * UNIT_SCALE, arr[2] * UNIT_SCALE);
 }
 
 export async function initScene(container) {
   containerEl = container;
   canvasEl = container?.querySelector('#threeCanvas');
   fallbackEl = container?.querySelector('#threeFallback');
-  if (!containerEl) return;
-  if (!canvasEl) {
-    console.error('No se encontró el canvas threeCanvas dentro del contenedor 3D.');
-    showFallback('No se pudo inicializar la vista 3D. Falta el canvas dedicado.');
-    return;
-  }
-  if (isReady) {
-    recordStep('Init reutilizado', 'skip', 'La escena ya estaba lista.');
-    onResize();
+
+  if (!containerEl || !canvasEl) {
+    console.error('No se encontró el contenedor o el canvas para el modo 3D.');
+    showFallback('Falta el lienzo 3D en la interfaz.');
     return;
   }
 
   hideFallback();
 
+  if (isReady) {
+    resizeRenderer();
+    return;
+  }
+
   try {
-    await runStep('Importar Three.js', ensureThree);
+    await ensureThree();
 
-    await runStep('Crear escena', () => {
-      scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x0f172a);
-    });
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x020617);
 
-    await runStep('Configurar renderizador', () => setupRenderer());
-    await runStep('Configurar cámara', () => setupCamera());
-    await runStep('Configurar controles', () => setupControls());
-    await runStep('Configurar luces', () => setupLights());
+    buildRenderer();
+    buildCamera();
+    buildControls();
+    buildLights();
+    buildEarth();
+    buildSceneGraph();
 
-    const earth = await runStep('Construir Tierra', () => buildEarth());
-    scene.add(earth);
-    await runStep('Montar grafo de escena', () => setupSceneGraph());
+    resizeObserver = new ResizeObserver(() => resizeRenderer());
+    resizeObserver.observe(containerEl);
+    window.addEventListener('resize', resizeRenderer);
 
-    await runStep('Ajustar tamaño inicial', () => onResize());
-    await runStep('Iniciar observadores', () => {
-      resizeObserver = new ResizeObserver(() => onResize());
-      resizeObserver.observe(containerEl);
-      window.addEventListener('resize', onResize);
-      return { resizeObserver: true };
-    });
-
-    hideFallback();
-    await runStep('Iniciar renderizado', () => startRendering());
+    startAnimation();
     isReady = true;
   } catch (error) {
     console.error('Error inicializando la vista 3D', error);
-    const messageParts = [];
-    if (error?.step) {
-      messageParts.push(`Fallo durante "${error.step}".`);
-    }
-    if (error?.message) {
-      messageParts.push(error.message);
-    }
-    showFallback(messageParts.join(' ') || 'No se pudo inicializar la vista 3D. Comprueba la compatibilidad WebGL.');
+    showFallback(error?.message || 'No se pudo inicializar la vista 3D.');
   }
 }
 
@@ -500,7 +305,13 @@ export function updateOrbitPath(points) {
     orbitLine.geometry = new THREE.BufferGeometry();
     return;
   }
-  const vectors = points.map((p) => toVector3(p.rEcef));
+  const vectors = points
+    .map((p) => toVector3(p.rEcef))
+    .filter((vec) => vec instanceof THREE.Vector3);
+  if (!vectors.length) {
+    orbitLine.visible = false;
+    return;
+  }
   if (vectors.length > 1) {
     vectors.push(vectors[0].clone());
   }
@@ -523,6 +334,7 @@ export function renderStations(stations, selectedId) {
   stations.forEach((station) => {
     const mesh = ensureStationMesh(station);
     const vec = toVector3(stationEcef(station));
+    if (!vec) return;
     mesh.position.copy(vec);
     if (station.id === selectedId) {
       mesh.material.color.setHex(0xfacc15);
@@ -546,6 +358,10 @@ export function updateLink(point, station) {
   }
   const sat = toVector3(point.rEcef);
   const ground = toVector3(stationEcef(station));
+  if (!sat || !ground) {
+    linkLine.visible = false;
+    return;
+  }
   linkLine.geometry.dispose();
   linkLine.geometry = new THREE.BufferGeometry().setFromPoints([ground, sat]);
   if (typeof linkLine.computeLineDistances === 'function') {
@@ -557,41 +373,46 @@ export function updateLink(point, station) {
 export function setTheme(nextTheme) {
   if (!scene || !renderer) return;
   if (nextTheme === 'dark') {
-    scene.background.setHex(0x0f172a);
-    renderer.setClearColor(0x0f172a, 1);
+    scene.background.setHex(0x020617);
+    renderer.setClearColor(0x020617, 1);
   } else {
-    scene.background.setHex(0xf8fafc);
-    renderer.setClearColor(0xf8fafc, 1);
+    scene.background.setHex(0xf4f7fb);
+    renderer.setClearColor(0xf4f7fb, 1);
   }
 }
 
 export function disposeScene() {
+  cancelAnimation();
   if (resizeObserver && containerEl) {
     resizeObserver.unobserve(containerEl);
     resizeObserver.disconnect();
     resizeObserver = null;
   }
-  window.removeEventListener('resize', onResize);
+  window.removeEventListener('resize', resizeRenderer);
+
   if (renderer) {
-    if (typeof renderer.setAnimationLoop === 'function') {
-      renderer.setAnimationLoop(null);
-    }
-    if (!usingAnimationLoop && frameHandle) {
-      window.cancelAnimationFrame(frameHandle);
-      frameHandle = null;
-    }
     renderer.dispose();
-    if (typeof renderer.forceContextLoss === 'function') {
-      renderer.forceContextLoss();
-    }
+    renderer = null;
   }
+
+  stationMeshes.forEach((mesh) => {
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  });
   stationMeshes.clear();
-  renderer = null;
+
+  orbitLine?.geometry?.dispose();
+  orbitLine?.material?.dispose();
+  linkLine?.geometry?.dispose();
+  linkLine?.material?.dispose();
+  earthMesh?.geometry?.dispose();
+  earthMesh?.material?.dispose();
+  atmosphereMesh?.geometry?.dispose();
+  atmosphereMesh?.material?.dispose();
+
   scene = null;
   camera = null;
   controls = null;
-  frameHandle = null;
-  usingAnimationLoop = false;
   earthGroup = null;
   earthMesh = null;
   atmosphereMesh = null;
@@ -599,7 +420,8 @@ export function disposeScene() {
   satelliteMesh = null;
   stationGroup = null;
   linkLine = null;
-  isReady = false;
+  containerEl = null;
   canvasEl = null;
-  recordStep('Dispose escena', 'skip', 'Recursos liberados.');
+  fallbackEl = null;
+  isReady = false;
 }

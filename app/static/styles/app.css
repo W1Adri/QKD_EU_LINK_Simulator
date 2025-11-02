@@ -539,6 +539,10 @@ input[type="range"] {
   font-weight: 500;
 }
 
+#threeFallback[hidden] {
+  display: none !important;
+}
+
 .dialog-content {
   background: var(--surface);
   border-radius: var(--radius-md);
