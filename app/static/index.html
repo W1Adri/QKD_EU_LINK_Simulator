@@ -29,6 +29,23 @@
         <button id="btnMapStyle" type="button" class="ghost">Mapa satelital</button>
         <button id="btnTheme" type="button" class="ghost" aria-pressed="false">Modo oscuro</button>
       </div>
+      <div class="session-controls">
+        <form id="authForm" class="auth-form" autocomplete="off">
+          <label class="sr-only" for="authUsername">Nombre de usuario</label>
+          <input id="authUsername" name="username" type="text" placeholder="Usuario" autocomplete="username" required />
+          <label class="sr-only" for="authPassword">Contraseña</label>
+          <input id="authPassword" name="password" type="password" placeholder="Contraseña" autocomplete="current-password" required />
+          <div class="auth-buttons">
+            <button type="submit" name="intent" value="login">Entrar</button>
+            <button type="submit" name="intent" value="register">Registrar</button>
+          </div>
+        </form>
+        <div id="authSummary" class="auth-summary" hidden>
+          <span id="authGreeting"></span>
+          <button id="logoutButton" type="button">Cerrar sesión</button>
+        </div>
+        <p id="authFeedback" class="auth-feedback" role="status" aria-live="polite"></p>
+      </div>
     </header>
 
     <main class="workspace">
@@ -39,6 +56,7 @@
           <button type="button" data-section-target="optics">Enlace óptico</button>
           <button type="button" data-section-target="stations">Estaciones</button>
           <button type="button" data-section-target="analytics">Gráficas</button>
+          <button type="button" data-section-target="chat">Chat</button>
         </nav>
         <div class="panel-content">
           <section class="panel-section is-active" data-section="orbit">
@@ -167,6 +185,30 @@
             <div class="mini-chart" id="chartElevation">Elevación</div>
             <div class="mini-chart" id="chartDistance">Distancia</div>
           </section>
+
+          <section class="panel-section" data-section="chat">
+            <header>
+              <h2>Chat de misión</h2>
+              <p>Coordina el análisis con el resto del equipo.</p>
+            </header>
+            <div class="chat-panel">
+              <div id="chatLog" class="chat-log" role="log" aria-live="polite"></div>
+              <form id="chatForm" class="chat-form">
+                <label class="sr-only" for="chatMessage">Nuevo mensaje</label>
+                <textarea id="chatMessage" name="message" rows="3" placeholder="Escribe un mensaje" required></textarea>
+                <div class="chat-actions">
+                  <button type="submit">Enviar</button>
+                  <button id="btnRefreshChats" type="button" class="ghost">Actualizar</button>
+                </div>
+              </form>
+              <div class="chat-admin">
+                <button id="btnUserCount" type="button" class="ghost">Contar usuarios</button>
+                <span id="userCountLabel" class="chat-meta" aria-live="polite"></span>
+              </div>
+              <p id="chatStatus" class="chat-status" role="status" aria-live="polite"></p>
+              <p id="chatHint" class="chat-hint">Inicia sesión para participar en el chat.</p>
+            </div>
+          </section>
         </div>
       </aside>
 
@@ -238,5 +280,6 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script type="module" src="/static/js/main.js"></script>
+  <script type="module" src="/static/js/authChat.js"></script>
 </body>
 </html>
