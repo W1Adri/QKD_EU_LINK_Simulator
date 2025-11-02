@@ -1,11 +1,9 @@
 import { constants as orbitConstants, stationEcef } from './orbit.js';
+import { EARTH_TEXTURE_BASE64 } from './earthTexture.js';
 
 const { EARTH_RADIUS_KM } = orbitConstants;
 const UNIT_SCALE = 1 / EARTH_RADIUS_KM;
-const THREE_EXAMPLES_BASE = 'https://raw.githubusercontent.com/mrdoob/three.js/r158/examples/textures/planets/';
-const EARTH_TEXTURE_URL = `${THREE_EXAMPLES_BASE}earth_atmos_2048.jpg`;
-const EARTH_SPECULAR_URL = `${THREE_EXAMPLES_BASE}earth_specular_2048.jpg`;
-const EARTH_BUMP_URL = `${THREE_EXAMPLES_BASE}earth_normal_2048.jpg`;
+const EARTH_TEXTURE_URL = `data:image/png;base64,${EARTH_TEXTURE_BASE64}`;
 
 const diagnostics = {
   steps: [],
@@ -85,6 +83,8 @@ let satelliteMesh;
 let stationGroup;
 let linkLine;
 let resizeObserver;
+let frameHandle;
+let usingAnimationLoop = false;
 let isReady = false;
 
 const stationMeshes = new Map();
@@ -95,8 +95,12 @@ function ensureThree() {
       import('three'),
       import('three/addons/controls/OrbitControls.js'),
     ]).then(([threeModule, controlsModule]) => {
-      THREE = threeModule;
-      OrbitControls = controlsModule.OrbitControls;
+      THREE = threeModule.default ?? threeModule;
+      OrbitControls =
+        controlsModule.OrbitControls || controlsModule.default || controlsModule;
+      if (typeof OrbitControls !== 'function') {
+        throw new Error('OrbitControls no está disponible en el paquete importado.');
+      }
     });
   }
   return threePromise;
@@ -139,20 +143,12 @@ async function buildEarth() {
   });
 
   try {
-    const [diffuse, specular, bump] = await Promise.all([
-      loadTexture(EARTH_TEXTURE_URL),
-      loadTexture(EARTH_SPECULAR_URL),
-      loadTexture(EARTH_BUMP_URL),
-    ]);
+    const diffuse = await loadTexture(EARTH_TEXTURE_URL);
     diffuse.colorSpace = THREE.SRGBColorSpace;
     material.map = diffuse;
-    material.specularMap = specular;
-    material.bumpMap = bump;
-    material.bumpScale = 0.02;
     material.needsUpdate = true;
   } catch (error) {
-    // Textures are optional; keep procedural material if they fail.
-    console.warn('Fallo al cargar texturas del planeta:', error);
+    console.warn('Fallo al cargar textura del planeta:', error);
   }
 
   earthMesh = new THREE.Mesh(geometry, material);
@@ -221,9 +217,15 @@ function setupRenderer() {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.setPixelRatio(window.devicePixelRatio || 1);
   renderer.setClearColor(0x0f172a, 1);
+  renderer.setSize(width, height, false);
 
   canvasEl.addEventListener('webglcontextlost', (event) => {
     event.preventDefault();
+    if (!usingAnimationLoop && frameHandle) {
+      window.cancelAnimationFrame(frameHandle);
+      frameHandle = null;
+    }
+    usingAnimationLoop = false;
     showFallback('Se perdió el contexto WebGL. Recarga la página para reiniciar la vista 3D.');
     isReady = false;
   });
@@ -318,7 +320,11 @@ function onResize() {
 
 function startRendering() {
   if (!renderer) return;
-  renderer.setAnimationLoop(() => {
+  if (frameHandle) {
+    window.cancelAnimationFrame(frameHandle);
+    frameHandle = null;
+  }
+  const renderFrame = () => {
     if (earthMesh) {
       earthMesh.rotation.y += 0.00025;
       if (atmosphereMesh) {
@@ -327,8 +333,20 @@ function startRendering() {
     }
     controls?.update();
     renderer.render(scene, camera);
-  });
-  return { usingAnimationLoop: true };
+  };
+
+  if (typeof renderer.setAnimationLoop === 'function') {
+    usingAnimationLoop = true;
+    renderer.setAnimationLoop(renderFrame);
+  } else {
+    usingAnimationLoop = false;
+    const loop = () => {
+      renderFrame();
+      frameHandle = window.requestAnimationFrame(loop);
+    };
+    frameHandle = window.requestAnimationFrame(loop);
+  }
+  return { usingAnimationLoop };
 }
 
 function ensureStationMesh(station) {
@@ -371,6 +389,14 @@ function hideFallback() {
 }
 
 function showFallback(message) {
+  if (renderer && typeof renderer.setAnimationLoop === 'function') {
+    renderer.setAnimationLoop(null);
+  }
+  if (!usingAnimationLoop && frameHandle) {
+    window.cancelAnimationFrame(frameHandle);
+    frameHandle = null;
+  }
+  usingAnimationLoop = false;
   if (fallbackEl) {
     let finalMessage = message || 'No se pudo inicializar la escena 3D.';
     if (diagnostics.lastError) {
@@ -422,6 +448,8 @@ export async function initScene(container) {
     onResize();
     return;
   }
+
+  hideFallback();
 
   try {
     await runStep('Importar Three.js', ensureThree);
@@ -545,7 +573,13 @@ export function disposeScene() {
   }
   window.removeEventListener('resize', onResize);
   if (renderer) {
-    renderer.setAnimationLoop(null);
+    if (typeof renderer.setAnimationLoop === 'function') {
+      renderer.setAnimationLoop(null);
+    }
+    if (!usingAnimationLoop && frameHandle) {
+      window.cancelAnimationFrame(frameHandle);
+      frameHandle = null;
+    }
     renderer.dispose();
     if (typeof renderer.forceContextLoss === 'function') {
       renderer.forceContextLoss();
@@ -556,6 +590,8 @@ export function disposeScene() {
   scene = null;
   camera = null;
   controls = null;
+  frameHandle = null;
+  usingAnimationLoop = false;
   earthGroup = null;
   earthMesh = null;
   atmosphereMesh = null;
