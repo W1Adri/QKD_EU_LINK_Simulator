@@ -1,9 +1,8 @@
 import { constants as orbitConstants, stationEcef } from './orbit.js';
-import { EARTH_TEXTURE_BASE64 } from './earthTexture.js';
+import { createEarthTexture } from './earthTexture.js';
 
-const { EARTH_RADIUS_KM } = orbitConstants;
+const { EARTH_RADIUS_KM, EARTH_ROT_RATE } = orbitConstants;
 const UNIT_SCALE = 1 / EARTH_RADIUS_KM;
-const EARTH_TEXTURE_URL = `data:image/png;base64,${EARTH_TEXTURE_BASE64}`;
 
 let THREE;
 let OrbitControls;
@@ -26,6 +25,8 @@ let satelliteMesh;
 let stationGroup;
 let linkLine;
 let isReady = false;
+let earthSimulationRotation = 0;
+let passiveAtmosphereOffset = 0;
 
 const stationMeshes = new Map();
 
@@ -128,6 +129,7 @@ function buildLights() {
 
 function buildEarth() {
   earthGroup = new THREE.Group();
+  earthGroup.name = 'EarthGroup';
 
   const earthGeometry = new THREE.SphereGeometry(1, 128, 128);
   const earthMaterial = new THREE.MeshPhongMaterial({
@@ -135,23 +137,16 @@ function buildEarth() {
     specular: 0x222222,
     shininess: 20,
   });
+  const texture = createEarthTexture(THREE);
+  if (texture) {
+    const maxAniso = renderer?.capabilities?.getMaxAnisotropy?.() ?? 4;
+    texture.anisotropy = Math.min(maxAniso, 8);
+    earthMaterial.map = texture;
+    earthMaterial.needsUpdate = true;
+  }
   earthMesh = new THREE.Mesh(earthGeometry, earthMaterial);
   earthMesh.name = 'Earth';
   earthGroup.add(earthMesh);
-
-  const loader = new THREE.TextureLoader();
-  loader.load(
-    EARTH_TEXTURE_URL,
-    (texture) => {
-      texture.colorSpace = THREE.SRGBColorSpace;
-      earthMaterial.map = texture;
-      earthMaterial.needsUpdate = true;
-    },
-    undefined,
-    () => {
-      // Si la textura falla se mantiene el color base.
-    }
-  );
 
   const atmosphereGeometry = new THREE.SphereGeometry(1.02, 96, 96);
   const atmosphereMaterial = new THREE.MeshBasicMaterial({
@@ -194,18 +189,22 @@ function buildSceneGraph() {
   satelliteMesh.visible = false;
 
   stationGroup = new THREE.Group();
+  stationGroup.name = 'StationGroup';
+  earthGroup.add(stationGroup);
 
-  scene.add(orbitLine, linkLine, satelliteMesh, stationGroup);
+  scene.add(orbitLine, linkLine, satelliteMesh);
 }
 
 function startAnimation() {
   cancelAnimation();
+  passiveAtmosphereOffset = 0;
   const renderFrame = () => {
-    if (earthMesh) {
-      earthMesh.rotation.y += 0.0003;
+    if (earthGroup) {
+      earthGroup.rotation.y = earthSimulationRotation;
     }
     if (atmosphereMesh) {
-      atmosphereMesh.rotation.y += 0.00026;
+      passiveAtmosphereOffset = (passiveAtmosphereOffset + 0.003) % (Math.PI * 2);
+      atmosphereMesh.rotation.y = earthSimulationRotation + passiveAtmosphereOffset;
     }
     controls?.update();
     renderer.render(scene, camera);
@@ -251,7 +250,30 @@ function clearStations(keepIds) {
 
 function toVector3(arr) {
   if (!THREE || !Array.isArray(arr)) return null;
-  return new THREE.Vector3(arr[0] * UNIT_SCALE, arr[1] * UNIT_SCALE, arr[2] * UNIT_SCALE);
+  const [x, y, z] = arr;
+  return new THREE.Vector3(x * UNIT_SCALE, z * UNIT_SCALE, -y * UNIT_SCALE);
+}
+
+function toVector3Eci(arr) {
+  return toVector3(arr);
+}
+
+function updateEarthRotation() {
+  if (earthGroup) {
+    earthGroup.rotation.y = earthSimulationRotation;
+  }
+  if (atmosphereMesh) {
+    atmosphereMesh.rotation.y = earthSimulationRotation + passiveAtmosphereOffset;
+  }
+}
+
+export function setEarthRotationFromTime(seconds) {
+  if (!Number.isFinite(seconds)) return;
+  earthSimulationRotation = (seconds * EARTH_ROT_RATE) % (Math.PI * 2);
+  if (earthSimulationRotation < 0) {
+    earthSimulationRotation += Math.PI * 2;
+  }
+  updateEarthRotation();
 }
 
 export async function initScene(container) {
@@ -289,6 +311,7 @@ export async function initScene(container) {
     resizeObserver.observe(containerEl);
     window.addEventListener('resize', resizeRenderer);
 
+    updateEarthRotation();
     startAnimation();
     isReady = true;
   } catch (error) {
@@ -306,23 +329,26 @@ export function updateOrbitPath(points) {
     return;
   }
   const vectors = points
-    .map((p) => toVector3(p.rEcef))
+    .map((p) => toVector3Eci(p.rEci))
     .filter((vec) => vec instanceof THREE.Vector3);
   if (!vectors.length) {
     orbitLine.visible = false;
     return;
   }
-  if (vectors.length > 1) {
-    vectors.push(vectors[0].clone());
-  }
+  const first = vectors[0];
+  const last = vectors[vectors.length - 1];
+  const closed = first.distanceTo(last) < 1e-3;
+  const curve = new THREE.CatmullRomCurve3(vectors, closed, 'centripetal', 0.5);
+  const segments = Math.min(2048, Math.max(120, vectors.length * 3));
+  const smoothPoints = curve.getPoints(segments);
   orbitLine.geometry.dispose();
-  orbitLine.geometry = new THREE.BufferGeometry().setFromPoints(vectors);
+  orbitLine.geometry = new THREE.BufferGeometry().setFromPoints(smoothPoints);
   orbitLine.visible = true;
 }
 
 export function updateSatellite(point) {
   if (!isReady || !satelliteMesh || !point) return;
-  const pos = toVector3(point.rEcef);
+  const pos = toVector3Eci(point.rEci);
   if (!pos) return;
   satelliteMesh.position.copy(pos);
   satelliteMesh.visible = true;
@@ -356,12 +382,14 @@ export function updateLink(point, station) {
     linkLine.visible = false;
     return;
   }
-  const sat = toVector3(point.rEcef);
-  const ground = toVector3(stationEcef(station));
-  if (!sat || !ground) {
+  const sat = toVector3Eci(point.rEci);
+  const mesh = ensureStationMesh(station);
+  if (!sat || !mesh) {
     linkLine.visible = false;
     return;
   }
+  earthGroup?.updateMatrixWorld(true);
+  const ground = mesh.getWorldPosition(new THREE.Vector3());
   linkLine.geometry.dispose();
   linkLine.geometry = new THREE.BufferGeometry().setFromPoints([ground, sat]);
   if (typeof linkLine.computeLineDistances === 'function') {
@@ -424,4 +452,6 @@ export function disposeScene() {
   canvasEl = null;
   fallbackEl = null;
   isReady = false;
+  earthSimulationRotation = 0;
+  passiveAtmosphereOffset = 0;
 }

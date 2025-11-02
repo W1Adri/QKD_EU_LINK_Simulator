@@ -1,1 +1,437 @@
-export const EARTH_TEXTURE_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAtAAAAFoCAIAAADxRFtOAAAQpUlEQVR42u3dTchmZRkH8Gs5iwha1KYWEUTUJhciBRn0BeVQMkZNw4BJjDCIfRgTMYWiWFnGgMigMWFoocVEGkwlkpWghIKCCRmGBiERSRS0cOGmWrWQaead9z3/c+6PH/yW47zzXOe6rvv/nOc8r/Xwcy8DAETVz5/5JwBAVN3/5N8AAKLqR799EQAgqu75zfMAAFF16qFnAQCi6uSZpwEAourET54AAIiqb9z3KABAVN14968AAKLq+KlfAABE1RdP/hQAIKquPXEaACCqrr7lBwAAUXXlTXcBAETVp756JwBAVB04dhsAQFRd9rlbAQCi6oNHvwYAEFWXfuZ6AICouuTwlwEAouqiT1wHABBVb7/8GgCAqHrLR44AAETVm95/JQBAVL3+PQcBAKLqtZccAACIqn0X7QcAiBI4NvC2Gw8NSdHGKDWAwCFkzHgWihdiByBw4KTMHodShdgBCBw4IIPHodLJFoDAgaMxeFI6WQEEDoSMePJQFgCBY/aQoQjCnGwBIHA49kY4fWULAIFjzDsNDv6mDmbxgp00g+KAwLHBzQbZYpjYIWqw7MgDAkcwFogXiBoDf46pUCBwbPmhhlsaSBszPC+lXCBweGwCUYPgw1gqDwLHqp+SyDqIGnN+C0zRQOBoPWHIHEgb0gYwTuDoaJs7O3HaSRtAN4Gj6yXuEMVRJ20Afg+HzIG0MfvEqRgIHAIHogbSBiBwyByIGn7TBiBwyBxIG37fht+0AQKHwIGowdojplAgcFiIiBpk50uVQOCwE5E2kDYAgUPgQNToebKUCAQOmxFRg+BYKQ4IHJYj0gbSBiBwCByIGj0PlMqAwIHMIWqwWdpwsQbYgQqIwCFzSBtsPEc7/8OqN8zGU14EDoFD1GDVOfIdFivOBRU4VEHmEDhYO224lBaaKytwIHPIHCw5Pks9paExLqhW/s0IHAIH0sYs49P+QNlXLgoChxnGzhohbWgY28kII3CYatuK4L1xnWMXGWQEDkNuSeGT+NZfhU5WB4FD5kDaYPBhUT0XBYHDGsVWMiODtJBpNeACB/aCTYS0oVCGHYHDSsUCMhc9dJHBNPUIHHaHpYOJWL6RzKMNgMDhYWlXBJWPpAT9oCEROLyl884GnY+1gMBh82KzeMvod5RhPwgcyBy2iQ6foYtMk3WBwGEjY4NobGkDe0PgsJqxOLR05/1jlCwQBA4LGsvCExvxF2uasAEEDpkDC0IPZ5vHKGG9CBz2NdaB7o03j2nCwhE4bG3Mv76Nd45pwv4ROHwKjjqrZPbFOjuRPwQO7xcx3to13jamCQtK4LDEMc96Nd4zpgn7SuCwxzHAujTeMKYJ60vg8Ok4CBzSBvKHwIFtbkT1Z+etYpSw0AQOCx3zqT/jfWKUsNYEDtscaWPGFl3wn2dIsd8EDtscA6k/s7+Sy5BixQkcFjqmUX9mn+s0pFh0Aodtjjkc5/tTi/w9i9+N8CUy1l/XvuoocAgcAgeRFl35VsS5f4QhxcYTOGxzjN9oLbrUO7PNG8AcYekJHNIG0kZzXbrszzKkMO3qEzjsMiOnSye6iEYJC1DgsMqRNhrqUhMK1qDAMfjz/6hqC+euwAEyh8BhnRkwBA4TipUocFjlGK3Ou9RsgsUocNhrhgqBw2BiPQoc2GvShsDhYSCGu+7R3657oX95p/0scMgcooYWdXsDrEqBw4IzQqzYn+YRbEuBw4IzP2T70zCChSlwWHOGh2xzDvy0hPnCzhQ4ZA5EjUECR7OX1YhhcwocAgfSxpaP5S9yIfzPU8DyFDhkDgOj385V6r1ciI4utEHD/hQ4ZA7TwmbN9r8/uU4nGz2wQgUOi8+Q6LTzXJp+r76Jwy4VOBwDxoNJO63T3y6q+edp+PafmxY4kDmsWm3WXOYAS1XgcBiYCubtMdWA2ZaqwOEwMBh6TOYAwyJwOA+MB+M22AqfajursEsFDkeCCUF3HUq8aoEDi1TgoOMHjL06gaPBxbrz3zgCoobAwX6jwuS95E4hDL8/BQ73CfyzBY7+Vq2TCVFD4MC9cbRNsH+cTIgaAgdODoFD2wRbqKO7L/qwr/Z2P1jgQObAkw3gxobAgcPDLOkZwIYUOJwfJkrDAHajwMHsH8mjYUDaEDhwhBgw3QJYhgKHI8SYIXCANShw4BQxb1oFsP0EDqeIqdMqgL0ncCBzIHCAjSdw4NfSeS0Ch/OAXnrbohM4cJMDTQKyrMCB48Qc6hDAlhM4nChGEYEDrDiBA4eKadQbIG0gcDhUzjc2BlJvAJabwOFcWWNszKTGoLuzTXGkDYGDPo6W9A9y7QQO1hkf5ZI2BA7aPV3SP8hVEzjaOSEmOdJca2lD4KC5A2aFH+SSCRztnBCzHWauu7QhcLD9L7MzWgLHhCdEyy2d+7ctHmKm/a2dVqLA4bwJhnTvBgSOwd6STvuOWRvYYwIHG+yUNfeUi+IUETgamQ6dYIMJHKy6X1beU66CI6S1M2PyM0w/WFwCB01/ALnrpKLsDg+Bg45+o4mtInDQ5cGmbgKHwNHsLOgEBA4EDpwZ2WPGOTdb/9gVAge+C4MDY+TAoYWkDYEDBA6BY+p3t8ridEfgwOcpCBy9Bg69JPcgcOD2hqsjcCz/fYSRWv2sD9h2VxDLR+BA4EDgGPD/6q6j3NtA4EDgcHXIBg5NJW0gcLD96lE9Z0P7x48OH6mvLASBA7c3cDCMFji0lrSBwIHA4QKRDRy6S9pA4GCbh70NvCOh30NIoXKF9Z0UgQPiR5q6CRzjBQ5t5t4GAgdtrRsVcxL0dQ7p6k47zQYQOJh93SiXwDFS4NBmbfabyyFwYN3YBS0+Z6Msu/jzyntBS0DbI3Agc7gcbm/sppIarLUOVHCBA28fz7561Erg6Ohmu+5tuQnVWeDAorEmBI5xHiTUt631odoKHHD2ex62hsDR+7OE2rWRVhz4GRSBAwyzLe//FMr23eimrMABC8yzEgkcAoeG3OTyaSSBAw92IHBIG3ryUIP/KldT4GCEdaNQAofAoS3XuXB7+RH6SuBgkF2jXAKHtOGNRxdj4poKHLT7jRVvIKQNaUN/7u6qLXtNdZrAgYPQGAsczgB21NhNTYprJHAgcyiytMEULd3CpLheAgcdn4XqJnBoGM28eAPoQIEDG8QACxx2PfvTzaAPBQ7sEQMscOgQPRxvDA0pcOAbK763InDY7JZD/G/WmQIHDkUDLHBoCa0b7xadKXBgsxhjgUMn6Nt452hOgQPLxTALHBpA08ZbSH8KHFgxRrrFj8C9QAa7pomfqz8FDmb8zpuqurGB1tWfAgf4PyfZ2q4143SvyydwIHMoqbSBj1eCP1d/ChxMdDqqZIOBw/Wlox7e57v6Agc2i5nv9PaGp4Pp6Bsru/7RrpfAgcyhmCNkDtdUJ6/8aZ3+FDiwWcx/x4Fjd/8806GTN3k2aCe9pz8FDmyWQ4rZ+JOeriMtNPNefrqrI3DgofTZ33z08u0SaYMNm3kv/wDXReDAZrEX9vs6K1p62W7UyQIH1oqjrpvAYVOz+a1Kv2ND4ACZQ+CAbFerocABbX1eq4YuAYN1teoJHLD2YamGMgdTNbaiCRwgc8yYNhwArNbbyiVwwPZHpuoJHIzd3golcICbHLMHDocB6fZWJYED3OQQOJwHZDtcfQQOaO7UHLVu/pEMvxwW6St9KHCAzDHy7Q1vRgn1+a7/c/UUOLBTnHmDBw4bn6Vafe8DoqQCB3aK0278wGHjs5du9/UWgQO6OT5VTPJg1IeWPNshcIDAIXBIGzQ6FOomcGBZOOQEDlhpKFRP4MCycMiNGTg0PA0OhRoKHNgXjjqBA9YYCmUUOLAvHHUCB6w0FIopcOBBdEYIHC4fXQyFkgocWBmWiMABawyFqgoc2BqzLxFpA9YZCoUVOLA4BA6BA9YYCrUVOLA7BA6BAywNgQPsDoHDysadUYFDCZA5FEfUwMbQyQIH+FC2+8ChhxlsKNRZ4MASEThEDewKvS1wQGN7RE2sYywKTS5wwKv3SBd/p8ChVxlsUYy6QAQOcJOjy8ChP3GTA4EDe0TgsHOxKPS/wAECR5+BQ09iNAyCwIE9InDYsFgUJkLgAIGjz8ChCTEdRkPgwBIROOxTEDgEDmhvjyiFZYpdYUwEDnCTY/t9quXod0AUQeAAgaODwKHZsC4MjsCBDWI7BN/AWZrYGDKHwAEe44gvUz2GjWGCBA4QOLKbVINhaZgjgQMEDh8wgcwhcECHu0Md7EfsDZlD4AAHreAFMofAAQLHEKXQUUy1PRRB4ABv7jeog17C9nCTQ+AAgSNbB42EBSJzCBwgcGTroIuwQ2QOgQN8EJtdmkoHMofAAasuiwnroHlg/cwhcIDvaMxVBG0DMofAAW5yZIugZ2DDzCFwgJscU1RAt8C2j4VNO4YCBwLHRIFDq0ALtzoEDph6RwxfAU0CMofAAdvviLFfvvaApjKHwAECx4AvX29Ag7FD4IBJt8Oor11XQJuZQ+CASR8yH/K5US0BzX6vZIz3OQIH3o54wwG0fqtjjIIIHFgKAgcgc6xRCoEDS0HmAJrOHPN8gCtwYCMIHIDMscDLFziwDmQOoN3MMcwLFziwDgQOoOnYMcO3dQQOLAKBA9gscwz2egUOLAKZA2hr1Qz5egUObAGBA2hl2wz8egUOJl0BW31UCcgcY7+Z+X+v5RyvUeDACnCTA2CZBesOB+ZB4ADI7th9vqWCYZA5AKJr9rx/UuBA4BA4AOIPzAkcCBwyB0CcwIHMIXAACBwgcAAIHOBTFQAEDgQOgQNA4IDmA4fMASBwgJscAAIHCBwACBwIHDIHgMABAgeAwAHTBA6ZA0DgADc5AAQOEDgABA4QOGQOAIEDBA4AgQN6CBxN/T0AAge4yeEOB4DAAQIHgMABo2YOBQQQOEDgABA4QOAAEDhA5pA2AAQOEDgABA4YOnMoGoDAAQIHgMAB7QWO6J8HQOCAC77JoVwAAgdkM4dCAQgckM0cSgQgcEA2cygOgMABAgeAwAGdZw5lARA4IJs5FARA4IBs5lAKAIEDsplDEQBSgeP5v/9bFUDgAFj7Dsd/I8gAXFoA6OwjlTEiiCAFAJ09w+HgR5ACYIOHRh2ZIEgBbPAtFYcNCFIAG3wt1poGBCkQODZgwQEIUggcIggAghQjBg4RBABBSuBoJYKIigDQ0cFdw7wSAKDZ+zQ1cJgCABr5GKimup8DAGzylElN/pESALDCQ6zlSRYRBADS35EROEQQAMQLX4sVQQCgt3hxlsDhAgAAafWHv74CABBVz7z4MgBAVD31p38BAETV43/8BwBAVD367EsAAFH169/9BQAgqh566s8AAFH1sydeAACIqgceew4AIKpOP/J7AICouveXTwMARNXdDz4JABBV3z3zOABAVN1x/2MAAFF1++lHAACi6sR9DwMARNU373kQACCqbr7rDABAVN3wnQcAAKLq+MkfAwBE1bHbfggAEFWf//b3AQCi6ppbvgcAEFVX33wKACCqrrrhDgCAqDr8ldsBAKLqk186AQAQVQeu+xYAQFR99LNfBwCIqg8fvQkAIKo+cOR6AICoeu9VxwEAourdh48BAETVxQe/AAAQVe+84loAgKh6x8eOAgBE1VsvOwIAEFVv/tCnAQCi6o3vOwwAEFVvuPQgAEBUve5dHwcAiKrXXHw5AEDUfwDRHshKX27rYwAAAABJRU5ErkJggg==';
+const CONTINENTS = [
+  {
+    fill: '#3ba372',
+    stroke: 'rgba(18, 60, 38, 0.9)',
+    polygons: [
+      [
+        [-168, 71],
+        [-150, 72],
+        [-140, 70],
+        [-128, 60],
+        [-120, 58],
+        [-110, 50],
+        [-105, 43],
+        [-100, 36],
+        [-98, 30],
+        [-94, 25],
+        [-90, 20],
+        [-86, 16],
+        [-82, 20],
+        [-85, 26],
+        [-90, 32],
+        [-97, 38],
+        [-103, 42],
+        [-110, 48],
+        [-118, 54],
+        [-130, 60],
+        [-140, 65],
+        [-150, 68],
+        [-160, 70],
+      ],
+      [
+        [-83, 23],
+        [-81, 21],
+        [-78, 19],
+        [-77, 17],
+        [-76, 15],
+        [-78, 13],
+        [-81, 12],
+        [-84, 15],
+      ],
+      [
+        [-81, 10],
+        [-78, 7],
+        [-77, 4],
+        [-78, 1],
+        [-80, -4],
+        [-82, -5],
+        [-85, -3],
+        [-85, 2],
+        [-84, 6],
+      ],
+      [
+        [-66, 54],
+        [-60, 55],
+        [-54, 58],
+        [-50, 60],
+        [-48, 62],
+        [-45, 64],
+        [-40, 66],
+        [-34, 67],
+        [-30, 68],
+        [-32, 72],
+        [-40, 74],
+        [-48, 75],
+        [-56, 74],
+        [-62, 70],
+        [-66, 60],
+      ],
+    ],
+  },
+  {
+    fill: '#36a36b',
+    stroke: 'rgba(16, 68, 40, 0.9)',
+    polygons: [
+      [
+        [-81, 12],
+        [-78, 7],
+        [-74, 5],
+        [-72, 2],
+        [-68, -4],
+        [-66, -12],
+        [-64, -18],
+        [-62, -24],
+        [-60, -32],
+        [-60, -40],
+        [-62, -48],
+        [-66, -54],
+        [-72, -56],
+        [-78, -54],
+        [-80, -48],
+        [-82, -40],
+        [-82, -30],
+        [-80, -20],
+        [-78, -12],
+        [-76, -4],
+        [-78, 2],
+      ],
+    ],
+  },
+  {
+    fill: '#3ca76e',
+    stroke: 'rgba(18, 64, 40, 0.85)',
+    polygons: [
+      [
+        [-10, 71],
+        [-5, 68],
+        [6, 65],
+        [18, 63],
+        [30, 60],
+        [40, 58],
+        [50, 60],
+        [60, 58],
+        [70, 55],
+        [80, 50],
+        [90, 48],
+        [100, 50],
+        [110, 48],
+        [120, 46],
+        [130, 45],
+        [140, 45],
+        [150, 50],
+        [160, 52],
+        [170, 55],
+        [170, 60],
+        [160, 62],
+        [150, 63],
+        [140, 64],
+        [130, 62],
+        [120, 60],
+        [110, 60],
+        [100, 62],
+        [90, 64],
+        [80, 66],
+        [70, 68],
+        [60, 68],
+        [50, 70],
+        [40, 72],
+        [30, 72],
+        [20, 72],
+        [10, 73],
+        [0, 74],
+      ],
+      [
+        [-10, 37],
+        [0, 40],
+        [10, 42],
+        [20, 44],
+        [30, 46],
+        [40, 48],
+        [50, 50],
+        [60, 50],
+        [70, 46],
+        [80, 42],
+        [90, 38],
+        [100, 36],
+        [110, 34],
+        [120, 32],
+        [130, 30],
+        [138, 28],
+        [140, 20],
+        [136, 12],
+        [130, 8],
+        [120, 6],
+        [110, 6],
+        [100, 10],
+        [90, 12],
+        [80, 10],
+        [70, 8],
+        [60, 6],
+        [50, 6],
+        [40, 10],
+        [30, 12],
+        [20, 16],
+        [10, 18],
+        [0, 20],
+        [-10, 22],
+        [-18, 24],
+        [-20, 30],
+        [-18, 34],
+      ],
+      [
+        [40, 10],
+        [44, 12],
+        [48, 8],
+        [50, 2],
+        [48, -4],
+        [44, -8],
+        [40, -6],
+        [38, 0],
+      ],
+      [
+        [60, -10],
+        [70, -8],
+        [80, -6],
+        [90, -4],
+        [100, -2],
+        [108, -6],
+        [110, -12],
+        [106, -18],
+        [100, -20],
+        [94, -20],
+        [86, -18],
+        [78, -16],
+        [70, -14],
+        [62, -12],
+      ],
+    ],
+  },
+  {
+    fill: '#3aa069',
+    stroke: 'rgba(16, 66, 38, 0.85)',
+    polygons: [
+      [
+        [-18, 34],
+        [-10, 30],
+        [-2, 28],
+        [6, 24],
+        [12, 20],
+        [16, 14],
+        [20, 10],
+        [24, 4],
+        [28, -2],
+        [30, -10],
+        [32, -18],
+        [34, -24],
+        [30, -30],
+        [26, -36],
+        [20, -40],
+        [14, -42],
+        [8, -40],
+        [2, -36],
+        [-4, -32],
+        [-10, -26],
+        [-14, -18],
+        [-16, -10],
+        [-18, -2],
+        [-18, 6],
+        [-20, 14],
+        [-20, 24],
+      ],
+    ],
+  },
+  {
+    fill: '#34a46d',
+    stroke: 'rgba(12, 60, 34, 0.8)',
+    polygons: [
+      [
+        [110, -10],
+        [120, -14],
+        [132, -18],
+        [140, -22],
+        [150, -26],
+        [158, -28],
+        [162, -24],
+        [158, -18],
+        [150, -16],
+        [142, -12],
+        [134, -8],
+        [128, -4],
+        [122, 0],
+        [116, 2],
+        [110, 0],
+      ],
+      [
+        [146, -36],
+        [154, -38],
+        [160, -40],
+        [164, -44],
+        [160, -48],
+        [152, -46],
+        [146, -42],
+      ],
+      [
+        [112, -32],
+        [118, -34],
+        [124, -36],
+        [128, -40],
+        [122, -44],
+        [116, -42],
+      ],
+    ],
+  },
+  {
+    fill: '#88c9a6',
+    stroke: 'rgba(90, 140, 120, 0.8)',
+    polygons: [
+      [
+        [-170, -72],
+        [-160, -70],
+        [-150, -68],
+        [-140, -66],
+        [-130, -68],
+        [-120, -70],
+        [-110, -72],
+        [-100, -74],
+        [-90, -76],
+        [-80, -78],
+        [-70, -80],
+        [-60, -82],
+        [-50, -84],
+        [-40, -84],
+        [-30, -82],
+        [-20, -80],
+        [-10, -78],
+        [0, -78],
+        [10, -80],
+        [20, -82],
+        [30, -84],
+        [40, -82],
+        [50, -80],
+        [60, -78],
+        [70, -76],
+        [80, -74],
+        [90, -72],
+        [100, -70],
+        [110, -72],
+        [120, -74],
+        [130, -76],
+        [140, -78],
+        [150, -80],
+        [160, -82],
+        [170, -82],
+        [-180, -82],
+      ],
+    ],
+  },
+];
+
+function project(lon, lat, width, height) {
+  const x = ((lon + 180) / 360) * width;
+  const y = ((90 - lat) / 180) * height;
+  return [x, y];
+}
+
+function drawOceans(ctx, width, height) {
+  const gradient = ctx.createLinearGradient(0, 0, 0, height);
+  gradient.addColorStop(0, '#082f49');
+  gradient.addColorStop(0.5, '#072541');
+  gradient.addColorStop(1, '#061d34');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = '#0ea5e9';
+  for (let lat = -60; lat <= 60; lat += 20) {
+    const y = project(0, lat, width, height)[1];
+    ctx.fillRect(0, y - 1, width, 2);
+  }
+  ctx.restore();
+}
+
+function drawContinents(ctx, width, height) {
+  CONTINENTS.forEach((feature) => {
+    ctx.save();
+    ctx.fillStyle = feature.fill;
+    ctx.strokeStyle = feature.stroke;
+    ctx.lineWidth = 1.4;
+    feature.polygons.forEach((polygon) => {
+      ctx.beginPath();
+      polygon.forEach(([lon, lat], index) => {
+        const [x, y] = project(lon, lat, width, height);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    });
+    ctx.restore();
+  });
+}
+
+function drawShading(ctx, width, height) {
+  ctx.save();
+  const vignette = ctx.createRadialGradient(
+    width * 0.6,
+    height * 0.45,
+    width * 0.2,
+    width * 0.5,
+    height * 0.5,
+    width * 0.7
+  );
+  vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  vignette.addColorStop(1, 'rgba(0, 0, 0, 0.4)');
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = '#f8fafc';
+  for (let lon = -180; lon < 180; lon += 30) {
+    const [x] = project(lon, 0, width, height);
+    ctx.fillRect(x - 1, 0, 2, height);
+  }
+  ctx.restore();
+}
+
+function drawIceCaps(ctx, width, height) {
+  ctx.save();
+  const gradientNorth = ctx.createLinearGradient(0, 0, 0, height * 0.15);
+  gradientNorth.addColorStop(0, 'rgba(241, 245, 249, 0.85)');
+  gradientNorth.addColorStop(1, 'rgba(226, 232, 240, 0)');
+  ctx.fillStyle = gradientNorth;
+  ctx.fillRect(0, 0, width, height * 0.15);
+
+  const gradientSouth = ctx.createLinearGradient(0, height, 0, height * 0.85);
+  gradientSouth.addColorStop(0, 'rgba(226, 232, 240, 0.85)');
+  gradientSouth.addColorStop(1, 'rgba(226, 232, 240, 0)');
+  ctx.fillStyle = gradientSouth;
+  ctx.fillRect(0, height * 0.85, width, height * 0.15);
+  ctx.restore();
+}
+
+export function createEarthTexture(THREE) {
+  const width = 2048;
+  const height = 1024;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+
+  drawOceans(ctx, width, height);
+  drawContinents(ctx, width, height);
+  drawShading(ctx, width, height);
+  drawIceCaps(ctx, width, height);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.anisotropy = 4;
+  texture.needsUpdate = true;
+  return texture;
+}

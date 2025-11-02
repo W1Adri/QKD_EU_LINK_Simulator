@@ -32,6 +32,7 @@ import {
   updateSatellite,
   renderStations as renderStations3D,
   updateLink as updateLink3D,
+  setEarthRotationFromTime,
   setTheme as setSceneTheme,
 } from './scene3d.js';
 import { loadStationsFromServer, persistStation } from './groundStations.js';
@@ -498,14 +499,15 @@ function scheduleVisualUpdate() {
   const index = clamp(state.time.index, 0, dataPoints.length - 1);
   const current = dataPoints[index];
 
+  setEarthRotationFromTime(current.t ?? 0);
   updateGroundTrack(groundTrack);
   updateSatellitePosition({ lat: current.lat, lon: current.lon }, computeFootprint(current.alt));
-  updateSatellite(current);
   const station = getSelectedStation();
+  renderStations3D(state.stations.list, state.stations.selectedId);
+  updateSatellite(current);
   updateLinkLine({ lat: current.lat, lon: current.lon }, station);
   updateLink3D(current, station);
   renderStations2D(state.stations.list, state.stations.selectedId);
-  renderStations3D(state.stations.list, state.stations.selectedId);
   updateMetricsUI(index);
 }
 
