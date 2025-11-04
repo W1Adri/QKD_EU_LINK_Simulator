@@ -453,25 +453,18 @@ export function updateGroundTrackVector(point) {
     return;
   }
   const satPosition = satelliteMesh.getWorldPosition(new THREE.Vector3());
-  if (!Number.isFinite(satPosition.length())) {
+  const satRadius = satPosition.length();
+  if (!Number.isFinite(satRadius) || satRadius <= 0) {
     groundTrackVectorLine.visible = false;
     return;
   }
 
-  const surfaceVecLocal = vectorFromLatLon(point.lat, point.lon, GROUND_TRACK_ALTITUDE_KM);
-  if (!surfaceVecLocal || !earthGroup) {
-    groundTrackVectorLine.visible = false;
-    return;
-  }
-
-  earthGroup.updateMatrixWorld(true);
-  const surfaceWorld = surfaceVecLocal.clone();
-  earthGroup.localToWorld(surfaceWorld);
+  const nadirPosition = satPosition.clone().normalize().multiplyScalar(1.0);
 
   groundTrackVectorLine.geometry.dispose();
   groundTrackVectorLine.geometry = new THREE.BufferGeometry().setFromPoints([
     satPosition,
-    surfaceWorld,
+    nadirPosition,
   ]);
   groundTrackVectorLine.visible = true;
   if (typeof groundTrackVectorLine.computeLineDistances === 'function') {
