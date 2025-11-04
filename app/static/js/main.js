@@ -34,6 +34,9 @@ import {
   updateLink as updateLink3D,
   setEarthRotationFromTime,
   setTheme as setSceneTheme,
+  frameOrbitView,
+  updateGroundTrackSurface,
+  updateGroundTrackVector,
 } from './scene3d.js';
 import { loadStationsFromServer, persistStation } from './groundStations.js';
 import {
@@ -46,6 +49,7 @@ import {
   formatDuration,
   smoothArray,
 } from './utils.js';
+import { searchResonances } from './resonanceSolver.js';
 
 const { EARTH_RADIUS_KM, MIN_SEMI_MAJOR, MAX_SEMI_MAJOR } = orbitConstants;
 
@@ -57,6 +61,13 @@ let lastMetricsSignature = '';
 let playingRaf = null;
 let panelWidth = 360;
 let lastExpandedPanelWidth = 360;
+let hasMapBeenFramed = false;
+let hasSceneBeenFramed = false;
+
+const optimizerState = {
+  results: [],
+  query: null,
+};
 
 const PANEL_MIN_WIDTH = 240;
 const PANEL_MAX_WIDTH = 520;
@@ -64,9 +75,11 @@ const PANEL_COLLAPSE_THRESHOLD = 280;
 
 function cacheElements() {
   const ids = [
-    'satelliteName', 'epochInput', 'semiMajor', 'semiMajorSlider', 'eccentricity', 'eccentricitySlider',
-    'inclination', 'inclinationSlider', 'raan', 'raanSlider', 'argPerigee', 'argPerigeeSlider',
-    'meanAnomaly', 'meanAnomalySlider', 'resonanceToggle', 'resonanceOrbits', 'resonanceRotations',
+    'satelliteName', 'epochInput', 'semiMajor', 'semiMajorSlider', 'optToleranceA', 'optToleranceSlider',
+    'resonanceOrbits', 'resonanceOrbitsSlider', 'resonanceRotations', 'resonanceRotationsSlider',
+    'optMinRot', 'optMinRotSlider', 'optMaxRot', 'optMaxRotSlider', 'optMinOrb', 'optMinOrbSlider', 'optMaxOrb', 'optMaxOrbSlider',
+    'eccentricity', 'eccentricitySlider', 'inclination', 'inclinationSlider', 'raan', 'raanSlider', 'argPerigee', 'argPerigeeSlider',
+    'meanAnomaly', 'meanAnomalySlider',
     'satAperture', 'satApertureSlider', 'groundAperture', 'groundApertureSlider', 'wavelength',
     'wavelengthSlider', 'samplesPerOrbit', 'samplesPerOrbitSlider', 'timeSlider', 'btnPlay', 'btnPause',
     'btnStepBack', 'btnStepForward', 'btnResetTime', 'timeWarp', 'btnTheme', 'btnPanelToggle',
@@ -74,6 +87,7 @@ function cacheElements() {
     'elevationLabel', 'lossLabel', 'distanceMetric', 'elevationMetric', 'zenithMetric', 'lossMetric',
     'dopplerMetric', 'threeContainer', 'mapContainer', 'chartLoss', 'chartElevation', 'chartDistance', 'orbitMessages',
     'stationDialog', 'stationName', 'stationLat', 'stationLon', 'stationAperture', 'stationSave',
+    'optimizerForm', 'optSearchBtn', 'optSummary', 'optResults',
   ];
   ids.forEach((id) => {
     elements[id] = document.getElementById(id);
@@ -84,7 +98,7 @@ function cacheElements() {
   elements.panelSections = document.querySelectorAll('.panel-section');
   elements.viewTabs = document.querySelectorAll('[data-view]');
   elements.viewGrid = document.getElementById('viewGrid');
-  elements.resonanceHint = document.querySelector('[data-section="resonance"] .hint');
+  elements.resonanceHint = document.querySelector('[data-resonance-hint]');
 }
 
 function activatePanelSection(sectionId) {
@@ -139,6 +153,212 @@ function applyPanelWidth(width) {
   }
 }
 
+function normalizeInt(value, min, max) {
+  const numeric = Math.round(Number(value) || 0);
+  return clamp(numeric, min, max);
+}
+
+function normalizeTolerance(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) {
+    return 0;
+  }
+  const snapped = Math.round(numeric * 2) / 2;
+  return clamp(snapped, 0, 1000);
+}
+
+function formatDecimal(value, decimals = 3) {
+  if (!Number.isFinite(value)) return '';
+  const fixed = Number(value).toFixed(decimals);
+  return fixed
+    .replace(/\.(\d*?[1-9])0+$/, '.$1')
+    .replace(/\.0+$/, '')
+    .replace(/\.$/, '');
+}
+
+function syncPairValue(inputId, sliderId, value) {
+  const numeric = Number(value);
+  if (elements[inputId]) {
+    if (Number.isFinite(numeric) && inputId === 'semiMajor') {
+      elements[inputId].value = formatDecimal(numeric);
+    } else {
+      elements[inputId].value = Number.isFinite(numeric) ? String(numeric) : String(value);
+    }
+  }
+  if (elements[sliderId]) {
+    if (Number.isFinite(numeric) && sliderId === 'semiMajorSlider') {
+      elements[sliderId].value = String(numeric);
+    } else {
+      elements[sliderId].value = Number.isFinite(numeric) ? String(numeric) : String(value);
+    }
+  }
+}
+
+function ensureOrderedIntRange(minId, minSliderId, maxId, maxSliderId, minLimit, maxLimit) {
+  const minValue = normalizeInt(elements[minId]?.value, minLimit, maxLimit);
+  let maxValue = normalizeInt(elements[maxId]?.value, minLimit, maxLimit);
+  let adjustedMin = minValue;
+  if (maxValue < minValue) {
+    maxValue = minValue;
+  }
+  if (adjustedMin > maxLimit) {
+    adjustedMin = maxLimit;
+  }
+  syncPairValue(minId, minSliderId, adjustedMin);
+  syncPairValue(maxId, maxSliderId, maxValue);
+  return { min: adjustedMin, max: maxValue };
+}
+
+function formatKm(value, fractionDigits = 3, useGrouping = true) {
+  if (!Number.isFinite(value)) return '--';
+  return Number(value).toLocaleString('es-ES', {
+    useGrouping,
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  });
+}
+
+function renderOptimizerResults() {
+  if (!elements.optResults) return;
+  const { results, query } = optimizerState;
+
+  if (!query) {
+    if (elements.optSummary) elements.optSummary.textContent = '';
+    elements.optResults.innerHTML = '<p class="hint">Introduce un objetivo y pulsa "Buscar resonancias".</p>';
+    return;
+  }
+
+  const { targetA, toleranceKm, minRotations, maxRotations, minOrbits, maxOrbits } = query;
+  const toleranceText = `${formatKm(toleranceKm, 3)} km`;
+  if (elements.optSummary) {
+    elements.optSummary.textContent = `Resultado: ${results.length} coincidencia(s) para a₀ = ${formatKm(
+      targetA,
+      3,
+    )} km ± ${toleranceText}, j ∈ [${minRotations}, ${maxRotations}], k ∈ [${minOrbits}, ${maxOrbits}].`;
+  }
+
+  if (!results.length) {
+    elements.optResults.innerHTML =
+      '<p class="hint">No se encontraron resonancias en ese rango. Amplía la tolerancia o los límites j/k.</p>';
+    return;
+  }
+
+  const table = document.createElement('table');
+  table.className = 'optimizer-table';
+  table.innerHTML =
+    '<thead><tr><th>j (rot.)</th><th>k (órb.)</th><th>j/k</th><th>a req (km)</th><th>Δa (km)</th><th>Periodo</th><th></th></tr></thead>';
+  const tbody = document.createElement('tbody');
+  const maxRows = Math.min(results.length, 200);
+  for (let idx = 0; idx < maxRows; idx += 1) {
+    const hit = results[idx];
+    const delta = hit.deltaKm;
+    const deltaText = `${delta >= 0 ? '+' : ''}${formatKm(delta, 3)}`;
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${hit.j}</td>
+      <td>${hit.k}</td>
+  <td>${formatKm(hit.ratio, 6, false)}</td>
+      <td>${formatKm(hit.semiMajorKm, 3)}</td>
+      <td>${deltaText}</td>
+      <td>${formatDuration(hit.periodSec)}</td>
+      <td><button type="button" class="opt-apply" data-index="${idx}">Aplicar</button></td>
+    `;
+    tbody.appendChild(row);
+  }
+  table.appendChild(tbody);
+  elements.optResults.innerHTML = '';
+  elements.optResults.appendChild(table);
+
+  if (results.length > maxRows) {
+    const note = document.createElement('p');
+    note.className = 'hint';
+    note.textContent = `Se muestran ${maxRows} de ${results.length} resultados. Ajusta la tolerancia para acotar la búsqueda.`;
+    elements.optResults.appendChild(note);
+  }
+}
+
+function runResonanceSearch() {
+  if (!elements.semiMajor || !elements.optResults) return;
+  const rawTarget = Number(elements.semiMajor.value);
+  if (!Number.isFinite(rawTarget) || rawTarget <= 0) {
+    optimizerState.results = [];
+    optimizerState.query = null;
+    elements.optResults.innerHTML = '<p class="hint">Ajusta el semieje mayor objetivo con un valor válido (&gt; 0 km).</p>';
+    if (elements.optSummary) elements.optSummary.textContent = '';
+    return;
+  }
+
+  const targetA = clamp(rawTarget, MIN_SEMI_MAJOR, MAX_SEMI_MAJOR);
+  const sanitizedTarget = Number(targetA.toFixed(3));
+  syncPairValue('semiMajor', 'semiMajorSlider', sanitizedTarget);
+  if (Math.abs((state.orbital.semiMajor ?? 0) - sanitizedTarget) > 1e-3) {
+    mutate((draft) => {
+      draft.orbital.semiMajor = sanitizedTarget;
+    });
+  }
+
+  const toleranceKm = normalizeTolerance(elements.optToleranceA?.value);
+  syncPairValue('optToleranceA', 'optToleranceSlider', toleranceKm);
+
+  const rotationBounds = ensureOrderedIntRange('optMinRot', 'optMinRotSlider', 'optMaxRot', 'optMaxRotSlider', 1, 500);
+  const orbitBounds = ensureOrderedIntRange('optMinOrb', 'optMinOrbSlider', 'optMaxOrb', 'optMaxOrbSlider', 1, 500);
+
+  const results = searchResonances({
+    targetA: sanitizedTarget,
+    toleranceKm,
+    minRotations: rotationBounds.min,
+    maxRotations: rotationBounds.max,
+    minOrbits: orbitBounds.min,
+    maxOrbits: orbitBounds.max,
+  });
+
+  optimizerState.results = results;
+  optimizerState.query = {
+    targetA: sanitizedTarget,
+    toleranceKm,
+    minRotations: rotationBounds.min,
+    maxRotations: rotationBounds.max,
+    minOrbits: orbitBounds.min,
+    maxOrbits: orbitBounds.max,
+  };
+
+  renderOptimizerResults();
+}
+
+function applyResonanceCandidate(hit) {
+  if (!hit) return;
+
+  mutate((draft) => {
+    draft.resonance.enabled = true;
+    draft.resonance.orbits = hit.k;
+    draft.resonance.rotations = hit.j;
+    draft.orbital.semiMajor = Number(hit.semiMajorKm.toFixed(3));
+  });
+  if (elements.resonanceOrbits) elements.resonanceOrbits.value = String(hit.k);
+  if (elements.resonanceOrbitsSlider) elements.resonanceOrbitsSlider.value = String(hit.k);
+  if (elements.resonanceRotations) elements.resonanceRotations.value = String(hit.j);
+  if (elements.resonanceRotationsSlider) elements.resonanceRotationsSlider.value = String(hit.j);
+  if (elements.semiMajor && !elements.semiMajor.matches(':focus')) {
+    elements.semiMajor.value = formatDecimal(Number(hit.semiMajorKm));
+  }
+  if (elements.semiMajorSlider) {
+    elements.semiMajorSlider.value = String(Number(hit.semiMajorKm));
+  }
+
+  if (elements.optSummary) {
+    elements.optSummary.textContent = `Aplicada resonancia ${hit.j}:${hit.k} con a ≈ ${formatKm(hit.semiMajorKm, 3)} km.`;
+  }
+}
+
+function handleOptimizerResultClick(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  if (!target.matches('button.opt-apply[data-index]')) return;
+  const idx = Number(target.dataset.index);
+  if (!Number.isInteger(idx) || idx < 0 || idx >= optimizerState.results.length) return;
+  applyResonanceCandidate(optimizerState.results[idx]);
+}
+
 function applyTheme(theme) {
   if (theme === 'dark') {
     document.body.dataset.theme = 'dark';
@@ -175,30 +395,6 @@ function updateMapStyleButton(style) {
   }
 }
 
-function updateResonanceUI(enabled) {
-  const fields = document.getElementById('resonanceFields');
-  if (fields) {
-    fields.toggleAttribute('hidden', !enabled);
-    fields.querySelectorAll('input').forEach((input) => {
-      input.disabled = !enabled;
-    });
-  }
-  if (elements.resonanceHint) {
-    elements.resonanceHint.hidden = !enabled;
-  }
-  ['semiMajor', 'semiMajorSlider'].forEach((id) => {
-    const control = elements[id];
-    if (!control) return;
-    control.toggleAttribute('disabled', enabled);
-    control.classList.toggle('is-readonly', enabled);
-    if (enabled) {
-      control.setAttribute('aria-disabled', 'true');
-    } else {
-      control.removeAttribute('aria-disabled');
-    }
-  });
-}
-
 function initDefaults() {
   if (elements.epochInput) {
     const preset = isoNowLocal();
@@ -214,13 +410,17 @@ function initDefaults() {
     applyPanelWidth(rect.width);
   }
   if (elements.semiMajor) {
-    elements.semiMajor.min = String(MIN_SEMI_MAJOR);
-    elements.semiMajor.max = String(MAX_SEMI_MAJOR);
+    elements.semiMajor.min = MIN_SEMI_MAJOR.toFixed(3);
+    elements.semiMajor.max = MAX_SEMI_MAJOR.toFixed(3);
+    elements.semiMajor.step = 'any';
   }
   if (elements.semiMajorSlider) {
-    elements.semiMajorSlider.min = String(MIN_SEMI_MAJOR);
-    elements.semiMajorSlider.max = String(MAX_SEMI_MAJOR);
+    elements.semiMajorSlider.min = MIN_SEMI_MAJOR.toFixed(3);
+    elements.semiMajorSlider.max = MAX_SEMI_MAJOR.toFixed(3);
+    elements.semiMajorSlider.step = '0.1';
   }
+  const initialSemiMajor = clamp(state.orbital.semiMajor ?? MIN_SEMI_MAJOR, MIN_SEMI_MAJOR, MAX_SEMI_MAJOR);
+  syncPairValue('semiMajor', 'semiMajorSlider', initialSemiMajor);
   if (elements.timeSlider) {
     elements.timeSlider.min = 0;
     elements.timeSlider.max = 1;
@@ -229,6 +429,15 @@ function initDefaults() {
   if (elements.timeWarp) {
     elements.timeWarp.value = String(state.time.timeWarp);
   }
+  if (elements.optToleranceA && !elements.optToleranceA.value) {
+    elements.optToleranceA.value = '0';
+  }
+  const initialTolerance = normalizeTolerance(elements.optToleranceA?.value);
+  syncPairValue('optToleranceA', 'optToleranceSlider', initialTolerance);
+  syncPairValue('resonanceOrbits', 'resonanceOrbitsSlider', state.resonance.orbits ?? 1);
+  syncPairValue('resonanceRotations', 'resonanceRotationsSlider', state.resonance.rotations ?? 1);
+  ensureOrderedIntRange('optMinRot', 'optMinRotSlider', 'optMaxRot', 'optMaxRotSlider', 1, 500);
+  ensureOrderedIntRange('optMinOrb', 'optMinOrbSlider', 'optMaxOrb', 'optMaxOrbSlider', 1, 500);
   const savedTheme = localStorage.getItem('qkd-theme');
   if (savedTheme) {
     setTheme(savedTheme);
@@ -236,22 +445,33 @@ function initDefaults() {
   applyTheme(state.theme);
   updateViewMode(state.viewMode ?? 'dual');
   updateMapStyleButton(currentMapStyle);
-  updateResonanceUI(state.resonance.enabled);
   activatePanelSection('orbit');
   setPanelCollapsed(false);
   if (elements.panelReveal) {
     elements.panelReveal.hidden = true;
   }
+  renderOptimizerResults();
 }
 
 function bindEvents() {
+  const parseSemiMajor = (value) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return clamp(state.orbital.semiMajor ?? MIN_SEMI_MAJOR, MIN_SEMI_MAJOR, MAX_SEMI_MAJOR);
+    }
+    const clamped = clamp(numeric, MIN_SEMI_MAJOR, MAX_SEMI_MAJOR);
+    return Number(clamped.toFixed(3));
+  };
+
   const sliderPairs = [
-    ['semiMajor', 'semiMajorSlider', (value) => clamp(Number(value), MIN_SEMI_MAJOR, MAX_SEMI_MAJOR), 'orbital.semiMajor'],
+    ['semiMajor', 'semiMajorSlider', parseSemiMajor, 'orbital.semiMajor'],
     ['eccentricity', 'eccentricitySlider', (value) => clamp(Number(value), 0, 0.2), 'orbital.eccentricity'],
     ['inclination', 'inclinationSlider', (value) => clamp(Number(value), 0, 180), 'orbital.inclination'],
     ['raan', 'raanSlider', (value) => clamp(Number(value), 0, 360), 'orbital.raan'],
     ['argPerigee', 'argPerigeeSlider', (value) => clamp(Number(value), 0, 360), 'orbital.argPerigee'],
     ['meanAnomaly', 'meanAnomalySlider', (value) => clamp(Number(value), 0, 360), 'orbital.meanAnomaly'],
+    ['resonanceOrbits', 'resonanceOrbitsSlider', (value) => normalizeInt(value, 1, 500), 'resonance.orbits'],
+    ['resonanceRotations', 'resonanceRotationsSlider', (value) => normalizeInt(value, 1, 500), 'resonance.rotations'],
     ['satAperture', 'satApertureSlider', (value) => clamp(Number(value), 0.1, 3), 'optical.satAperture'],
     ['groundAperture', 'groundApertureSlider', (value) => clamp(Number(value), 0.1, 5), 'optical.groundAperture'],
     ['wavelength', 'wavelengthSlider', (value) => clamp(Number(value), 600, 1700), 'optical.wavelength'],
@@ -264,18 +484,51 @@ function bindEvents() {
     if (!inputEl || !sliderEl) return;
     const updateStateFromValue = (value) => {
       const normalized = normalize(value);
-      inputEl.value = String(normalized);
-      sliderEl.value = String(normalized);
+      const numericValue = Number(normalized);
+      const isSemiMajor = path === 'orbital.semiMajor';
+      const inputDisplay = Number.isFinite(numericValue)
+        ? isSemiMajor ? formatDecimal(numericValue) : String(numericValue)
+        : String(normalized);
+      inputEl.value = inputDisplay;
+      sliderEl.value = Number.isFinite(numericValue) ? String(numericValue) : String(normalized);
       mutate((draft) => {
         const [section, field] = path.split('.');
-        if (section === 'orbital') draft.orbital[field] = normalized;
-        else if (section === 'optical') draft.optical[field] = normalized;
-        else draft[field] = normalized;
+        const valueToAssign = Number.isFinite(numericValue) ? numericValue : normalized;
+        if (section === 'orbital') draft.orbital[field] = valueToAssign;
+        else if (section === 'optical') draft.optical[field] = valueToAssign;
+        else draft[field] = valueToAssign;
       });
     };
     inputEl.addEventListener('change', (event) => updateStateFromValue(event.target.value));
     sliderEl.addEventListener('input', (event) => updateStateFromValue(event.target.value));
   });
+
+  const bindOptimizerPair = (inputId, sliderId, normalize, afterChange) => {
+    const inputEl = elements[inputId];
+    const sliderEl = elements[sliderId];
+    if (!inputEl || !sliderEl) return;
+    const apply = (raw) => {
+      const normalized = normalize(raw);
+      inputEl.value = String(normalized);
+      sliderEl.value = String(normalized);
+      afterChange?.();
+    };
+    inputEl.addEventListener('change', (event) => apply(event.target.value));
+    sliderEl.addEventListener('input', (event) => apply(event.target.value));
+  };
+
+  bindOptimizerPair('optToleranceA', 'optToleranceSlider', normalizeTolerance);
+
+  const syncRotBounds = () => ensureOrderedIntRange('optMinRot', 'optMinRotSlider', 'optMaxRot', 'optMaxRotSlider', 1, 500);
+  const syncOrbBounds = () => ensureOrderedIntRange('optMinOrb', 'optMinOrbSlider', 'optMaxOrb', 'optMaxOrbSlider', 1, 500);
+
+  bindOptimizerPair('optMinRot', 'optMinRotSlider', (value) => normalizeInt(value, 1, 500), syncRotBounds);
+  bindOptimizerPair('optMaxRot', 'optMaxRotSlider', (value) => normalizeInt(value, 1, 500), syncRotBounds);
+  bindOptimizerPair('optMinOrb', 'optMinOrbSlider', (value) => normalizeInt(value, 1, 500), syncOrbBounds);
+  bindOptimizerPair('optMaxOrb', 'optMaxOrbSlider', (value) => normalizeInt(value, 1, 500), syncOrbBounds);
+
+  syncRotBounds();
+  syncOrbBounds();
 
   elements.panelTabs?.forEach((tab) => {
     tab.addEventListener('click', () => {
@@ -360,25 +613,12 @@ function bindEvents() {
     });
   });
 
-  elements.resonanceToggle?.addEventListener('change', (event) => {
-    const enabled = event.target.checked;
-    mutate((draft) => {
-      draft.resonance.enabled = enabled;
-    });
-    updateResonanceUI(enabled);
+  elements.optimizerForm?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    runResonanceSearch();
   });
 
-  elements.resonanceOrbits?.addEventListener('change', (event) => {
-    mutate((draft) => {
-      draft.resonance.orbits = clamp(Number(event.target.value), 1, 30);
-    });
-  });
-
-  elements.resonanceRotations?.addEventListener('change', (event) => {
-    mutate((draft) => {
-      draft.resonance.rotations = clamp(Number(event.target.value), 1, 30);
-    });
-  });
+  elements.optResults?.addEventListener('click', handleOptimizerResultClick);
 
   elements.btnPlay?.addEventListener('click', () => {
     playbackLoop.lastTimestamp = null;
@@ -496,16 +736,20 @@ function recomputeOrbit(force = false) {
     metrics,
     resonance: orbitData.resonance,
   });
-  if (elements.semiMajor) {
-    elements.semiMajor.value = orbitData.semiMajor.toFixed(0);
-  }
-  if (elements.semiMajorSlider) {
-    elements.semiMajorSlider.value = orbitData.semiMajor.toFixed(0);
-  }
   renderOrbitMessages();
   updateOrbitPath(orbitData.dataPoints);
+  updateGroundTrackSurface(orbitData.groundTrack);
+  frameOrbitView(orbitData.dataPoints, { force: !hasSceneBeenFramed });
+  if (!hasSceneBeenFramed && orbitData.dataPoints.length) {
+    hasSceneBeenFramed = true;
+  }
   lastMetricsSignature = metricsSignature(state);
-  flyToOrbit(orbitData.groundTrack);
+  flyToOrbit(orbitData.groundTrack, {
+    animate: hasMapBeenFramed,
+  });
+  if (!hasMapBeenFramed && Array.isArray(orbitData.groundTrack) && orbitData.groundTrack.length) {
+    hasMapBeenFramed = true;
+  }
   scheduleVisualUpdate();
 }
 
@@ -535,6 +779,7 @@ function scheduleVisualUpdate() {
   const station = getSelectedStation();
   renderStations3D(state.stations.list, state.stations.selectedId);
   updateSatellite(current);
+  updateGroundTrackVector(current);
   updateLinkLine({ lat: current.lat, lon: current.lon }, station);
   updateLink3D(current, station);
   renderStations2D(state.stations.list, state.stations.selectedId);
@@ -639,6 +884,9 @@ function renderOrbitMessages() {
       lines.push(`<p><strong>Resonancia ${label}</strong> · ground-track repetido tras ${ratio.orbits} órbitas.</p>`);
     } else {
       lines.push(`<p><strong>Intento de resonancia ${label}</strong> · ajusta los parámetros o revisa los avisos.</p>`);
+      if (Number.isFinite(info?.deltaKm)) {
+        lines.push(`<p>Desfase actual respecto a la resonancia: ${formatKm(info.deltaKm, 3)} km.</p>`);
+      }
     }
   }
 
@@ -724,6 +972,20 @@ function onStateChange(snapshot) {
   }
   if (snapshot.theme) applyTheme(snapshot.theme);
   if (snapshot.viewMode) updateViewMode(snapshot.viewMode);
+  if (elements.resonanceOrbits && !elements.resonanceOrbits.matches(':focus')) {
+    const value = String(snapshot.resonance.orbits ?? 1);
+    elements.resonanceOrbits.value = value;
+    if (elements.resonanceOrbitsSlider && !elements.resonanceOrbitsSlider.matches(':active')) {
+      elements.resonanceOrbitsSlider.value = value;
+    }
+  }
+  if (elements.resonanceRotations && !elements.resonanceRotations.matches(':focus')) {
+    const value = String(snapshot.resonance.rotations ?? 1);
+    elements.resonanceRotations.value = value;
+    if (elements.resonanceRotationsSlider && !elements.resonanceRotationsSlider.matches(':active')) {
+      elements.resonanceRotationsSlider.value = value;
+    }
+  }
 
   const orbitSig = orbitSignature(snapshot);
   if (orbitSig !== lastOrbitSignature) {
@@ -744,6 +1006,8 @@ async function initialize() {
   cacheElements();
   initDefaults();
   bindEvents();
+  hasMapBeenFramed = false;
+  hasSceneBeenFramed = false;
 
   mapInstance = initMap(elements.mapContainer);
   setBaseLayer(currentMapStyle);

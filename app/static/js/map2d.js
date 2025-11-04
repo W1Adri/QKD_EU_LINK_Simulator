@@ -8,6 +8,7 @@ let linkLayer;
 const stationMarkers = new Map();
 let baseLayers;
 let currentBase = 'standard';
+const ORBIT_FIT_PADDING = [48, 48];
 
 const TILE_STANDARD = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const TILE_SATELLITE = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
@@ -17,8 +18,8 @@ export function initMap(container) {
   map = L.map(container, {
     zoomSnap: 0.25,
     zoomDelta: 0.5,
-    minZoom: 2,
-    maxZoom: 9,
+    minZoom: 0,
+    maxZoom: 12,
     worldCopyJump: false,
     maxBounds: [
       [-85, -180],
@@ -67,7 +68,7 @@ export function initMap(container) {
     weight: 1,
   }).addTo(map);
 
-  map.setView([20, 0], 3);
+  map.fitWorld({ animate: false, maxZoom: 2 });
   setTimeout(() => map.invalidateSize(), 150);
   return map;
 }
@@ -187,10 +188,52 @@ export function focusOnStation(station) {
   });
 }
 
-export function flyToOrbit(points) {
-  if (!map || !points?.length) return;
-  const bounds = L.latLngBounds(points.map((p) => [p.lat, p.lon]));
-  map.flyToBounds(bounds, { padding: [32, 32], duration: 1.5 });
+export function flyToOrbit(points, options = {}) {
+  if (!map) return;
+  const {
+    animate = true,
+    padding = ORBIT_FIT_PADDING,
+    maxZoom = 7,
+  } = options;
+
+  const resolvedPadding = Array.isArray(padding) && padding.length === 2
+    ? padding
+    : ORBIT_FIT_PADDING;
+
+  const fallback = () => {
+    map.fitWorld({
+      animate,
+      maxZoom: Math.min(maxZoom, typeof map.getMaxZoom === 'function' ? map.getMaxZoom() : maxZoom),
+    });
+  };
+
+  if (!Array.isArray(points) || points.length === 0) {
+    fallback();
+    return;
+  }
+
+  const latLngs = points
+    .filter((p) => Number.isFinite(p?.lat) && Number.isFinite(p?.lon))
+    .map((p) => L.latLng(p.lat, p.lon));
+
+  if (!latLngs.length) {
+    fallback();
+    return;
+  }
+
+  const bounds = L.latLngBounds(latLngs);
+  if (!bounds.isValid()) {
+    fallback();
+    return;
+  }
+
+  const zoomCap = Math.min(maxZoom, typeof map.getMaxZoom === 'function' ? map.getMaxZoom() : maxZoom);
+  map.flyToBounds(bounds, {
+    padding: resolvedPadding,
+    maxZoom: zoomCap,
+    animate,
+    duration: animate ? 1.2 : 0,
+  });
 }
 
 export function updateFootprint(distanceKm) {

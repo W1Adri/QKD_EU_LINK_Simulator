@@ -17,7 +17,7 @@ const defaultState = {
     meanAnomaly: 0,
   },
   resonance: {
-    enabled: false,
+    enabled: true,
     orbits: 1,
     rotations: 1,
   },
@@ -55,6 +55,7 @@ const defaultState = {
       ratio: null,
       warnings: [],
       semiMajorKm: null,
+  deltaKm: null,
       targetPeriodSeconds: null,
       periodSeconds: null,
       perigeeKm: null,

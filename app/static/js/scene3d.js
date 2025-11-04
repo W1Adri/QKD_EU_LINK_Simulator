@@ -4,6 +4,7 @@ import { createEarthTextures, disposeEarthTextures } from './earthTexture.js';
 const { EARTH_RADIUS_KM, EARTH_ROT_RATE } = orbitConstants;
 const UNIT_SCALE = 1 / EARTH_RADIUS_KM;
 const EARTH_BASE_ROTATION = -Math.PI / 2;
+const GROUND_TRACK_ALTITUDE_KM = 0.05;
 
 const EARTH_VERTEX_SHADER = `
   varying vec2 vUv;
@@ -69,12 +70,16 @@ let orbitLine;
 let satelliteMesh;
 let stationGroup;
 let linkLine;
+let groundTrackLine;
+let groundTrackVectorLine;
 let isReady = false;
 let earthSimulationRotation = 0;
 let passiveAtmosphereOffset = 0;
 let earthUniforms;
 let earthTextures;
 let sunLight;
+let hasUserMovedCamera = false;
+let lastFramedRadius = null;
 
 const stationMeshes = new Map();
 
@@ -149,8 +154,8 @@ function buildRenderer() {
 function buildCamera() {
   const width = Math.max(containerEl.clientWidth, 1);
   const height = Math.max(containerEl.clientHeight, 1);
-  camera = new THREE.PerspectiveCamera(45, width / height, 0.01, 50);
-  camera.position.set(0, 2.6, 4.4);
+  camera = new THREE.PerspectiveCamera(45, width / height, 0.01, 80);
+  camera.position.set(0.4, 3, 4.8);
 }
 
 function buildControls() {
@@ -158,12 +163,15 @@ function buildControls() {
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.enablePan = false;
-  controls.minDistance = 1.2;
-  controls.maxDistance = 10;
+  controls.minDistance = 0.6;
+  controls.maxDistance = 200;
   controls.rotateSpeed = 0.6;
-  controls.zoomSpeed = 0.8;
+  controls.zoomSpeed = 0.9;
   controls.target.set(0, 0, 0);
   controls.update();
+  controls.addEventListener('start', () => {
+    hasUserMovedCamera = true;
+  });
 }
 
 function buildLights() {
@@ -245,6 +253,24 @@ function buildSceneGraph() {
     })
   );
   linkLine.visible = false;
+
+  groundTrackLine = new THREE.Line(
+    new THREE.BufferGeometry(),
+    new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 1.2 })
+  );
+  groundTrackLine.visible = false;
+  earthGroup.add(groundTrackLine);
+
+  groundTrackVectorLine = new THREE.Line(
+    new THREE.BufferGeometry(),
+    new THREE.LineDashedMaterial({
+      color: 0x14b8a6,
+      dashSize: 0.045,
+      gapSize: 0.03,
+    })
+  );
+  groundTrackVectorLine.visible = false;
+  scene.add(groundTrackVectorLine);
 
   const satMaterial = new THREE.MeshStandardMaterial({
     color: 0xf97316,
@@ -341,6 +367,116 @@ export function setEarthRotationFromTime(seconds) {
     earthSimulationRotation += Math.PI * 2;
   }
   updateEarthRotation();
+}
+
+function vectorFromLatLon(latDeg, lonDeg, altitudeKm = GROUND_TRACK_ALTITUDE_KM) {
+  if (!Number.isFinite(latDeg) || !Number.isFinite(lonDeg)) return null;
+  const ecef = stationEcef({ lat: latDeg, lon: lonDeg }) || [];
+  const vec = toVector3(ecef);
+  if (!vec) return null;
+  const safeAltitude = Number.isFinite(altitudeKm) ? altitudeKm : GROUND_TRACK_ALTITUDE_KM;
+  const scale = (EARTH_RADIUS_KM + safeAltitude) / EARTH_RADIUS_KM;
+  vec.multiplyScalar(scale);
+  return vec;
+}
+
+function computeFramingRadius(points) {
+  if (!Array.isArray(points)) return 0;
+  let maxRadius = 0;
+  points.forEach((point) => {
+    const vec = toVector3Eci(point?.rEci);
+    if (!vec) return;
+    const length = vec.length();
+    if (Number.isFinite(length)) {
+      maxRadius = Math.max(maxRadius, length);
+    }
+  });
+  return maxRadius;
+}
+
+export function frameOrbitView(points, { force = false } = {}) {
+  if (!isReady || !camera || !controls) return;
+  const radius = computeFramingRadius(points);
+  if (!Number.isFinite(radius) || radius <= 0) return;
+
+  const safeRadius = Math.max(radius, 1.05);
+  controls.maxDistance = Math.max(controls.maxDistance, safeRadius * 4.0);
+  controls.minDistance = Math.min(controls.minDistance, 0.5);
+  camera.far = Math.max(camera.far, safeRadius * 4.0);
+  camera.updateProjectionMatrix();
+
+  const radiusChangedSignificantly = !lastFramedRadius || safeRadius > lastFramedRadius * 1.3;
+  const shouldReframe = force || !hasUserMovedCamera || radiusChangedSignificantly;
+  lastFramedRadius = safeRadius;
+
+  if (!shouldReframe) return;
+
+  const distance = Math.max(safeRadius * 2.4, 2.6);
+  const altitude = distance * 0.62;
+  const lateral = distance * 0.45;
+
+  camera.position.set(lateral, altitude, distance);
+  controls.target.set(0, 0, 0);
+  controls.update();
+}
+
+export function updateGroundTrackSurface(points) {
+  if (!isReady || !groundTrackLine) return;
+  if (!Array.isArray(points) || points.length === 0) {
+    groundTrackLine.visible = false;
+    groundTrackLine.geometry.dispose();
+    groundTrackLine.geometry = new THREE.BufferGeometry();
+    return;
+  }
+  const vectors = points
+    .map((point) => vectorFromLatLon(point?.lat, point?.lon))
+    .filter((vec) => vec instanceof THREE.Vector3);
+  if (!vectors.length) {
+    groundTrackLine.visible = false;
+    return;
+  }
+  groundTrackLine.geometry.dispose();
+  groundTrackLine.geometry = new THREE.BufferGeometry().setFromPoints(vectors);
+  groundTrackLine.visible = true;
+}
+
+export function updateGroundTrackVector(point) {
+  if (!isReady || !groundTrackVectorLine || !satelliteMesh) return;
+  if (!point || !Array.isArray(point.rEci)) {
+    groundTrackVectorLine.visible = false;
+    return;
+  }
+
+  satelliteMesh.updateMatrixWorld(true);
+  if (!satelliteMesh.visible) {
+    groundTrackVectorLine.visible = false;
+    return;
+  }
+  const satPosition = satelliteMesh.getWorldPosition(new THREE.Vector3());
+  if (!Number.isFinite(satPosition.length())) {
+    groundTrackVectorLine.visible = false;
+    return;
+  }
+
+  const surfaceVecLocal = vectorFromLatLon(point.lat, point.lon, GROUND_TRACK_ALTITUDE_KM);
+  if (!surfaceVecLocal || !earthGroup) {
+    groundTrackVectorLine.visible = false;
+    return;
+  }
+
+  earthGroup.updateMatrixWorld(true);
+  const surfaceWorld = surfaceVecLocal.clone();
+  earthGroup.localToWorld(surfaceWorld);
+
+  groundTrackVectorLine.geometry.dispose();
+  groundTrackVectorLine.geometry = new THREE.BufferGeometry().setFromPoints([
+    satPosition,
+    surfaceWorld,
+  ]);
+  groundTrackVectorLine.visible = true;
+  if (typeof groundTrackVectorLine.computeLineDistances === 'function') {
+    groundTrackVectorLine.computeLineDistances();
+  }
 }
 
 function updateSunDirection() {
@@ -509,10 +645,21 @@ export function disposeScene() {
   });
   stationMeshes.clear();
 
+  earthGroup?.remove(groundTrackLine);
+  earthGroup?.remove(stationGroup);
+  scene?.remove(orbitLine);
+  scene?.remove(linkLine);
+  scene?.remove(satelliteMesh);
+  scene?.remove(groundTrackVectorLine);
+
   orbitLine?.geometry?.dispose();
   orbitLine?.material?.dispose();
   linkLine?.geometry?.dispose();
   linkLine?.material?.dispose();
+  groundTrackLine?.geometry?.dispose();
+  groundTrackLine?.material?.dispose();
+  groundTrackVectorLine?.geometry?.dispose();
+  groundTrackVectorLine?.material?.dispose();
   earthMesh?.geometry?.dispose();
   earthMesh?.material?.dispose();
   atmosphereMesh?.geometry?.dispose();
@@ -529,6 +676,8 @@ export function disposeScene() {
   satelliteMesh = null;
   stationGroup = null;
   linkLine = null;
+  groundTrackLine = null;
+  groundTrackVectorLine = null;
   earthUniforms = null;
   earthTextures = null;
   sunLight = null;

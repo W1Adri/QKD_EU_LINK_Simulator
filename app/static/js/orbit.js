@@ -5,7 +5,8 @@ const EARTH_RADIUS_KM = 6378.137;
 const EARTH_ROT_RATE = 7.2921150e-5; // rad/s
 const SIDEREAL_DAY = 86164.0905; // s
 const MIN_SEMI_MAJOR = EARTH_RADIUS_KM + 160; // ≈160 km de altitud mínima
-const MAX_SEMI_MAJOR = 45000; // límite práctico para órbitas diseñadas aquí
+const GEO_ALTITUDE_KM = 35786; // altitud GEO para límite superior realista
+const MAX_SEMI_MAJOR = EARTH_RADIUS_KM + GEO_ALTITUDE_KM; // ≈42 164 km
 const CLOSURE_SURFACE_TOL_KM = 0.25;
 const CLOSURE_CARTESIAN_TOL_KM = 0.1;
 
@@ -213,6 +214,7 @@ export function propagateOrbit(settings) {
     ratio: resonance.enabled ? { orbits: resonance.orbits, rotations: resonance.rotations } : null,
     warnings: [],
     semiMajorKm: null,
+    deltaKm: null,
     targetPeriodSeconds: null,
     periodSeconds: null,
     perigeeKm: null,
@@ -224,7 +226,7 @@ export function propagateOrbit(settings) {
     closed: false,
   };
 
-  let semiMajor = orbital.semiMajor;
+  let semiMajor = clamp(orbital.semiMajor, MIN_SEMI_MAJOR, MAX_SEMI_MAJOR);
   if (resonance.enabled) {
     const safeOrbits = Math.max(1, resonance.orbits || 1);
     const safeRotations = Math.max(1, resonance.rotations || 1);
@@ -232,7 +234,7 @@ export function propagateOrbit(settings) {
     resonanceInfo.targetPeriodSeconds = targetPeriod;
     let computedSemiMajor = computeSemiMajorWithResonance(safeOrbits, safeRotations);
     resonanceInfo.semiMajorKm = computedSemiMajor;
-    let applied = true;
+    let resonanceFeasible = true;
 
     if (computedSemiMajor < MIN_SEMI_MAJOR) {
       resonanceInfo.warnings.push(
@@ -240,7 +242,7 @@ export function propagateOrbit(settings) {
         'Se utiliza el límite inferior, perdiendo la repetición exacta.'
       );
       computedSemiMajor = MIN_SEMI_MAJOR;
-      applied = false;
+      resonanceFeasible = false;
     }
     if (computedSemiMajor > MAX_SEMI_MAJOR) {
       resonanceInfo.warnings.push(
@@ -248,26 +250,32 @@ export function propagateOrbit(settings) {
         'Se utiliza el límite superior sin resonancia exacta.'
       );
       computedSemiMajor = MAX_SEMI_MAJOR;
-      applied = false;
+      resonanceFeasible = false;
     }
 
-    const perigee = computedSemiMajor * (1 - orbital.eccentricity);
-    const apogee = computedSemiMajor * (1 + orbital.eccentricity);
-    resonanceInfo.perigeeKm = perigee;
-    resonanceInfo.apogeeKm = apogee;
-    if (perigee <= EARTH_RADIUS_KM + 10) {
-      resonanceInfo.warnings.push('El perigeo cae por debajo de la superficie terrestre. Reduce la excentricidad o ajusta la resonancia.');
-      applied = false;
+    const deltaKm = Math.abs(computedSemiMajor - semiMajor);
+    resonanceInfo.deltaKm = deltaKm;
+
+    const perigeeTarget = computedSemiMajor * (1 - orbital.eccentricity);
+    const apogeeTarget = computedSemiMajor * (1 + orbital.eccentricity);
+    const perigeeWarning = 'El perigeo cae por debajo de la superficie terrestre. Reduce la excentricidad o ajusta la resonancia.';
+    if (perigeeTarget <= EARTH_RADIUS_KM + 10) {
+      resonanceInfo.warnings.push(perigeeWarning);
+      resonanceFeasible = false;
     }
 
-    resonanceInfo.applied = applied;
-    semiMajor = computedSemiMajor;
-  } else {
-    semiMajor = clamp(semiMajor, MIN_SEMI_MAJOR, MAX_SEMI_MAJOR);
-    const perigee = semiMajor * (1 - orbital.eccentricity);
-    const apogee = semiMajor * (1 + orbital.eccentricity);
-    resonanceInfo.perigeeKm = perigee;
-    resonanceInfo.apogeeKm = apogee;
+    const resonanceToleranceKm = 0.5;
+    resonanceInfo.applied = resonanceFeasible && deltaKm <= resonanceToleranceKm;
+  }
+
+  semiMajor = clamp(semiMajor, MIN_SEMI_MAJOR, MAX_SEMI_MAJOR);
+  const perigee = semiMajor * (1 - orbital.eccentricity);
+  const apogee = semiMajor * (1 + orbital.eccentricity);
+  resonanceInfo.perigeeKm = perigee;
+  resonanceInfo.apogeeKm = apogee;
+  const perigeeWarning = 'El perigeo cae por debajo de la superficie terrestre. Reduce la excentricidad o ajusta la resonancia.';
+  if (perigee <= EARTH_RADIUS_KM + 10 && !resonanceInfo.warnings.includes(perigeeWarning)) {
+    resonanceInfo.warnings.push(perigeeWarning);
   }
 
   const meanMotion = Math.sqrt(MU_EARTH / (semiMajor ** 3));
