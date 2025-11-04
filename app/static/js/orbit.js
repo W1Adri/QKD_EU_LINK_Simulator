@@ -10,6 +10,34 @@ const MAX_SEMI_MAJOR = EARTH_RADIUS_KM + GEO_ALTITUDE_KM; // ≈42 164 km
 const CLOSURE_SURFACE_TOL_KM = 0.25;
 const CLOSURE_CARTESIAN_TOL_KM = 0.1;
 
+function normalizeAngle(angle) {
+  const twoPi = Math.PI * 2;
+  let normalized = angle % twoPi;
+  if (normalized < 0) {
+    normalized += twoPi;
+  }
+  return normalized;
+}
+
+function dateToJulian(date) {
+  if (!(date instanceof Date) || Number.isNaN(date?.getTime?.())) {
+    return null;
+  }
+  return date.getTime() / 86400000 + 2440587.5;
+}
+
+function gmstFromDate(date) {
+  const jd = dateToJulian(date);
+  if (!Number.isFinite(jd)) {
+    return 0;
+  }
+  const d = jd - 2451545.0;
+  const t = d / 36525.0;
+  const gmstDeg = 280.46061837 + 360.98564736629 * d + 0.000387933 * t * t - (t * t * t) / 38710000;
+  const gmstRad = gmstDeg * DEG2RAD;
+  return normalizeAngle(gmstRad);
+}
+
 function solveKepler(meanAnomaly, eccentricity, tolerance = 1e-8, maxIter = 20) {
   let E = meanAnomaly;
   if (eccentricity > 0.8) {
@@ -195,13 +223,14 @@ function computeSemiMajorWithResonance(orbits, rotations) {
   return semiMajor;
 }
 
-export function propagateOrbit(settings) {
+export function propagateOrbit(settings, options = {}) {
   const {
     orbital,
     resonance,
     samplesPerOrbit,
     time: { timeline: currentTimeline },
   } = settings;
+  const { samplesPerOrbit: samplesOverride } = options;
 
   const i = orbital.inclination * DEG2RAD;
   const raan = orbital.raan * DEG2RAD;
@@ -283,17 +312,32 @@ export function propagateOrbit(settings) {
   resonanceInfo.periodSeconds = orbitPeriod;
   const totalOrbits = resonance.enabled ? Math.max(1, resonance.orbits) : 3;
   const totalTime = orbitPeriod * totalOrbits;
-  const totalSamples = Math.max(2, Math.round(samplesPerOrbit * totalOrbits));
+  const effectiveSamplesPerOrbit = Number.isFinite(samplesOverride)
+    ? Math.max(2, samplesOverride)
+    : samplesPerOrbit;
+  const totalSamples = Math.max(2, Math.round(effectiveSamplesPerOrbit * totalOrbits));
   const dt = totalTime / (totalSamples - 1);
 
   const timeline = currentTimeline?.length === totalSamples
     ? currentTimeline
     : Array.from({ length: totalSamples }, (_, idx) => idx * dt);
 
+  let epochDate = null;
+  if (settings?.epoch) {
+    const parsed = new Date(settings.epoch);
+    if (!Number.isNaN(parsed.getTime())) {
+      epochDate = parsed;
+    }
+  }
+  if (!epochDate) {
+    epochDate = new Date();
+  }
+  const gmstInitial = gmstFromDate(epochDate);
+
   const dataPoints = timeline.map((t) => {
     const M = (meanAnomaly0 + meanMotion * t) % TWO_PI;
     const { rEci, vEci } = orbitalPositionVelocity(semiMajor, orbital.eccentricity, i, raan, argPerigee, M);
-    const gmst = EARTH_ROT_RATE * t;
+    const gmst = normalizeAngle(gmstInitial + EARTH_ROT_RATE * t);
     const { rEcef, vEcef } = rotateEciToEcef(rEci, vEci, gmst);
     const geo = ecefToLatLon(rEcef);
     return {

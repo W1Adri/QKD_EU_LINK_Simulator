@@ -54,6 +54,9 @@ import { searchResonances } from './resonanceSolver.js';
 const { EARTH_RADIUS_KM, MIN_SEMI_MAJOR, MAX_SEMI_MAJOR } = orbitConstants;
 
 const elements = {};
+const DRAFT_SAMPLES_PER_ORBIT = 36;
+
+let orbitSamplesOverride = null;
 let mapInstance;
 let currentMapStyle = 'standard';
 let lastOrbitSignature = '';
@@ -482,6 +485,7 @@ function bindEvents() {
     const inputEl = elements[inputId];
     const sliderEl = elements[sliderId];
     if (!inputEl || !sliderEl) return;
+    const isOrbitalField = path.startsWith('orbital.');
     const updateStateFromValue = (value) => {
       const normalized = normalize(value);
       const numericValue = Number(normalized);
@@ -499,8 +503,27 @@ function bindEvents() {
         else draft[field] = valueToAssign;
       });
     };
-    inputEl.addEventListener('change', (event) => updateStateFromValue(event.target.value));
-    sliderEl.addEventListener('input', (event) => updateStateFromValue(event.target.value));
+    inputEl.addEventListener('change', (event) => {
+      if (isOrbitalField) {
+        orbitSamplesOverride = null;
+      }
+      updateStateFromValue(event.target.value);
+    });
+    sliderEl.addEventListener('input', (event) => {
+      if (isOrbitalField) {
+        orbitSamplesOverride = DRAFT_SAMPLES_PER_ORBIT;
+      }
+      updateStateFromValue(event.target.value);
+    });
+    sliderEl.addEventListener('change', (event) => {
+      if (isOrbitalField) {
+        orbitSamplesOverride = null;
+      }
+      updateStateFromValue(event.target.value);
+      if (isOrbitalField) {
+        recomputeOrbit(true);
+      }
+    });
   });
 
   const bindOptimizerPair = (inputId, sliderId, normalize, afterChange) => {
@@ -725,7 +748,10 @@ function recomputeOrbit(force = false) {
   if (!force && signature === lastOrbitSignature) return;
   lastOrbitSignature = signature;
 
-  const orbitData = propagateOrbit(state);
+  const propagateOptions = orbitSamplesOverride != null
+    ? { samplesPerOrbit: orbitSamplesOverride }
+    : undefined;
+  const orbitData = propagateOrbit(state, propagateOptions);
   setTimeline({ timeline: orbitData.timeline, totalSeconds: orbitData.totalTime });
   const metrics = computeStationMetrics(orbitData.dataPoints, getSelectedStation(), state.optical);
   setComputed({
