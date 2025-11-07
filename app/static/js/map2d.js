@@ -1,4 +1,4 @@
-import { formatDistanceKm } from './utils.js';
+import { clamp, formatDistanceKm } from './utils.js';
 
 let map;
 let orbitLayer;
@@ -9,9 +9,78 @@ const stationMarkers = new Map();
 let baseLayers;
 let currentBase = 'standard';
 const ORBIT_FIT_PADDING = [48, 48];
+let stationPickerHandler = null;
+let stationPickerMarker = null;
+let weatherLayer = null;
+let weatherLegend = null;
 
 const TILE_STANDARD = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const TILE_SATELLITE = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+
+const WEATHER_COLOR_STOPS = [
+  { stop: 0.0, r: 44, g: 123, b: 182 },
+  { stop: 0.25, r: 171, g: 217, b: 233 },
+  { stop: 0.5, r: 255, g: 255, b: 191 },
+  { stop: 0.75, r: 253, g: 174, b: 97 },
+  { stop: 1.0, r: 215, g: 25, b: 28 },
+];
+
+const WEATHER_GRADIENT_CSS = WEATHER_COLOR_STOPS.map((stop) => {
+  const hex = `#${stop.r.toString(16).padStart(2, '0')}${stop.g.toString(16).padStart(2, '0')}${stop.b
+    .toString(16)
+    .padStart(2, '0')}`;
+  return `${hex} ${(stop.stop * 100).toFixed(0)}%`;
+}).join(', ');
+
+function interpolateWeatherColor(t) {
+  const value = clamp(t, 0, 1);
+  let left = WEATHER_COLOR_STOPS[0];
+  let right = WEATHER_COLOR_STOPS[WEATHER_COLOR_STOPS.length - 1];
+  for (let idx = 1; idx < WEATHER_COLOR_STOPS.length; idx += 1) {
+    const candidate = WEATHER_COLOR_STOPS[idx];
+    if (value <= candidate.stop) {
+      right = candidate;
+      left = WEATHER_COLOR_STOPS[idx - 1];
+      break;
+    }
+  }
+  const span = Math.max(1e-6, right.stop - left.stop);
+  const localT = (value - left.stop) / span;
+  const r = Math.round(left.r + (right.r - left.r) * localT);
+  const g = Math.round(left.g + (right.g - left.g) * localT);
+  const b = Math.round(left.b + (right.b - left.b) * localT);
+  return `rgba(${r}, ${g}, ${b}, 0.78)`;
+}
+
+function computeEdges(samples) {
+  if (!Array.isArray(samples) || samples.length === 0) return [];
+  if (samples.length === 1) {
+    const value = samples[0];
+    return [value - 1, value + 1];
+  }
+  const edges = [];
+  for (let idx = 0; idx < samples.length - 1; idx += 1) {
+    const current = samples[idx];
+    const next = samples[idx + 1];
+    edges.push((current + next) / 2);
+  }
+  const firstGap = samples[1] - samples[0];
+  const lastGap = samples[samples.length - 1] - samples[samples.length - 2];
+  edges.unshift(samples[0] - firstGap / 2);
+  edges.push(samples[samples.length - 1] + lastGap / 2);
+  return edges;
+}
+
+function ensureWeatherLayer() {
+  if (!map) return null;
+  if (!weatherLayer) {
+    weatherLayer = L.layerGroup();
+  }
+  if (!map.hasLayer(weatherLayer)) {
+    weatherLayer.addTo(map);
+  }
+  return weatherLayer;
+}
 
 export function initMap(container) {
   if (!container) return null;
@@ -248,4 +317,169 @@ export function annotateStationTooltip(station, metrics) {
     `${station.name}<br>${station.lat.toFixed(2)}°, ${station.lon.toFixed(2)}°<br>${formatDistanceKm(metrics.distanceKm)}`,
     { sticky: true },
   );
+}
+
+function ensureStationPickerMarker() {
+  if (!map) return null;
+  if (!stationPickerMarker) {
+    stationPickerMarker = L.marker([0, 0], {
+      draggable: false,
+      keyboard: false,
+      interactive: false,
+      zIndexOffset: 1000,
+      icon: L.divIcon({
+        className: 'station-picker-marker',
+        html: '<div class="station-picker-marker-dot"></div>',
+        iconSize: [16, 16],
+        iconAnchor: [8, 8],
+      }),
+    });
+  }
+  if (!map.hasLayer(stationPickerMarker)) {
+    stationPickerMarker.addTo(map);
+  }
+  return stationPickerMarker;
+}
+
+function removeStationPickerMarker() {
+  if (stationPickerMarker && map && map.hasLayer(stationPickerMarker)) {
+    map.removeLayer(stationPickerMarker);
+  }
+  stationPickerMarker = null;
+}
+
+function buildWeatherLegend(variable) {
+  if (!map) return null;
+  const legendControl = L.control({ position: 'bottomleft' });
+  legendControl.onAdd = () => {
+    const container = L.DomUtil.create('div', 'weather-legend');
+    const title = L.DomUtil.create('div', 'weather-legend__title', container);
+    title.textContent = `${variable?.label ?? 'Field'} (${variable?.units ?? ''})`;
+    const gradient = L.DomUtil.create('div', 'weather-legend__gradient', container);
+    gradient.style.background = `linear-gradient(90deg, ${WEATHER_GRADIENT_CSS})`;
+    const scale = L.DomUtil.create('div', 'weather-legend__scale', container);
+    scale.innerHTML = `
+      <span>${variable?.minLabel ?? 'min'}</span>
+      <span>${variable?.maxLabel ?? 'max'}</span>
+    `;
+    return container;
+  };
+  return legendControl;
+}
+
+export function clearWeatherField() {
+  if (weatherLayer && map) {
+    weatherLayer.clearLayers();
+    map.removeLayer(weatherLayer);
+  }
+  weatherLayer = null;
+  if (weatherLegend) {
+    weatherLegend.remove();
+    weatherLegend = null;
+  }
+}
+
+export function renderWeatherField(fieldPayload) {
+  if (!map || !fieldPayload || !fieldPayload.grid) {
+    clearWeatherField();
+    return;
+  }
+
+  const layerGroup = ensureWeatherLayer();
+  if (!layerGroup) return;
+  layerGroup.clearLayers();
+
+  if (weatherLegend) {
+    weatherLegend.remove();
+    weatherLegend = null;
+  }
+
+  const { grid, variable } = fieldPayload;
+  const { latitudes, longitudes, values, min, max } = grid;
+  if (!Array.isArray(latitudes) || !Array.isArray(longitudes) || !Array.isArray(values)) {
+    clearWeatherField();
+    return;
+  }
+
+  const minValue = Number(min);
+  const maxValue = Number(max);
+  const latEdges = computeEdges(latitudes);
+  const lonEdges = computeEdges(longitudes);
+
+  // Render each lat/lon cell as a filled rectangle to approximate a smooth colour field.
+  for (let row = 0; row < values.length; row += 1) {
+    const rowValues = values[row];
+    if (!Array.isArray(rowValues)) continue;
+    for (let col = 0; col < rowValues.length; col += 1) {
+      const cellValue = rowValues[col];
+      const bounds = [
+        [latEdges[row], lonEdges[col]],
+        [latEdges[row + 1], lonEdges[col + 1]],
+      ];
+      if (!Number.isFinite(minValue) || !Number.isFinite(maxValue) || !Number.isFinite(cellValue)) {
+        const emptyRect = L.rectangle(bounds, {
+          weight: 0,
+          fillOpacity: 0,
+          interactive: false,
+        });
+        layerGroup.addLayer(emptyRect);
+        continue;
+      }
+      const normalized = minValue === maxValue ? 0.5 : (cellValue - minValue) / (maxValue - minValue);
+      const color = interpolateWeatherColor(normalized);
+      const rect = L.rectangle(bounds, {
+        weight: 0,
+        fillColor: color,
+        fillOpacity: 0.72,
+        interactive: false,
+      });
+      layerGroup.addLayer(rect);
+    }
+  }
+
+  weatherLegend = buildWeatherLegend({
+    label: variable?.label,
+    units: variable?.units,
+    minLabel: Number.isFinite(minValue) ? minValue.toFixed(1) : 'min',
+    maxLabel: Number.isFinite(maxValue) ? maxValue.toFixed(1) : 'max',
+  });
+  if (weatherLegend) {
+    weatherLegend.addTo(map);
+  }
+}
+
+export function startStationPicker(onPick, initialPosition) {
+  if (!map || typeof onPick !== 'function') return () => {};
+
+  stopStationPicker();
+
+  const container = map.getContainer();
+  container.classList.add('station-pick-mode');
+
+  if (initialPosition && Number.isFinite(initialPosition.lat) && Number.isFinite(initialPosition.lon)) {
+    const marker = ensureStationPickerMarker();
+    if (marker) marker.setLatLng([initialPosition.lat, initialPosition.lon]);
+  }
+
+  stationPickerHandler = (event) => {
+    const { lat, lng } = event.latlng;
+    const marker = ensureStationPickerMarker();
+    if (marker) marker.setLatLng([lat, lng]);
+    onPick({ lat, lon: lng });
+  };
+
+  map.on('click', stationPickerHandler);
+
+  return () => stopStationPicker();
+}
+
+export function stopStationPicker() {
+  if (!map) return;
+  const container = map.getContainer();
+  container.classList.remove('station-pick-mode');
+  if (stationPickerHandler) {
+    map.off('click', stationPickerHandler);
+    stationPickerHandler = null;
+  }
+  removeStationPickerMarker();
 }

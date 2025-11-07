@@ -25,6 +25,21 @@ const defaultState = {
     satAperture: 0.6,
     groundAperture: 1.0,
     wavelength: 810,
+    groundCn2Day: 5e-14,
+    groundCn2Night: 5e-15,
+  },
+  atmosphere: {
+    model: 'hufnagel-valley',
+    modelParams: {},
+  },
+  weather: {
+    active: false,
+    variable: 'wind_speed',
+    level_hpa: 200,
+    samples: 120,
+    time: isoNowLocal(),
+    data: null,
+    status: 'idle',
   },
   samplesPerOrbit: 180,
   time: {
@@ -48,6 +63,20 @@ const defaultState = {
       elevationDeg: [],
       lossDb: [],
       doppler: [],
+      azimuthDeg: [],
+      r0_array: [],
+      fG_array: [],
+      theta0_array: [],
+      wind_array: [],
+      loss_aod_array: [],
+      loss_abs_array: [],
+      r0_zenith: null,
+      fG_zenith: null,
+      theta0_zenith: null,
+      wind_rms: null,
+      loss_aod_db: null,
+      loss_abs_db: null,
+      atmosphereProfile: null,
     },
     resonance: {
       requested: false,
@@ -141,6 +170,17 @@ export function removeStations() {
   mutate((draft) => {
     draft.stations.list = [];
     draft.stations.selectedId = null;
+  });
+}
+
+export function removeStation(id) {
+  if (!id) return;
+  mutate((draft) => {
+    const filtered = draft.stations.list.filter((item) => item.id !== id);
+    draft.stations.list = filtered;
+    if (draft.stations.selectedId === id) {
+      draft.stations.selectedId = filtered.length ? filtered[0].id : null;
+    }
   });
 }
 

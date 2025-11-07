@@ -1,4 +1,4 @@
-import { upsertStation, removeStations } from './state.js';
+import { upsertStation, removeStations, removeStation as removeStationFromState } from './state.js';
 
 let builtinStations = [
   { id: 'tenerife', name: 'Teide Observatory (ES)', lat: 28.3, lon: -16.509, aperture: 1.0 },
@@ -12,6 +12,7 @@ let builtinStations = [
 ];
 
 export async function loadStationsFromServer() {
+  let loadedFromServer = false;
   try {
     const response = await fetch('/api/ogs');
     if (response.ok) {
@@ -24,10 +25,17 @@ export async function loadStationsFromServer() {
           lon: item.lon,
           aperture: item.aperture_m ?? 1.0,
         }));
+        loadedFromServer = true;
       }
     }
   } catch (error) {
-    console.warn('No se pudieron cargar estaciones remotas, usando base local.', error);
+    console.warn('Remote stations could not be loaded, falling back to built-in list.', error);
+  }
+
+  if (!loadedFromServer) {
+    for (const station of builtinStations) {
+      await persistStation(station);
+    }
   }
   builtinStations.forEach((station) => upsertStation(station));
 }
@@ -38,6 +46,7 @@ export async function persistStation(station) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        id: station.id,
         name: station.name,
         lat: station.lat,
         lon: station.lon,
@@ -48,7 +57,7 @@ export async function persistStation(station) {
       throw new Error(`Error ${response.status}`);
     }
   } catch (error) {
-    console.warn('No se pudo persistir la estación en el backend, se mantendrá solo en memoria.', error);
+    console.warn('Station could not be persisted on the backend; keeping it in memory only.', error);
   }
 }
 
@@ -56,7 +65,21 @@ export async function clearStations() {
   try {
     await fetch('/api/ogs', { method: 'DELETE' });
   } catch (error) {
-    console.warn('No se pudieron limpiar estaciones remotas.', error);
+    console.warn('Remote station records could not be cleared.', error);
   }
   removeStations();
+}
+
+export async function deleteStationRemote(stationId) {
+  if (!stationId) return;
+  try {
+    const response = await fetch(`/api/ogs/${encodeURIComponent(stationId)}`, { method: 'DELETE' });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`Error ${response.status}`);
+    }
+  } catch (error) {
+    console.warn('Station could not be removed on the backend; removing it locally only.', error);
+  }
+  builtinStations = builtinStations.filter((station) => station.id !== stationId);
+  removeStationFromState(stationId);
 }

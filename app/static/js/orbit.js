@@ -4,8 +4,8 @@ const MU_EARTH = 398600.4418; // km^3/s^2
 const EARTH_RADIUS_KM = 6378.137;
 const EARTH_ROT_RATE = 7.2921150e-5; // rad/s
 const SIDEREAL_DAY = 86164.0905; // s
-const MIN_SEMI_MAJOR = EARTH_RADIUS_KM + 160; // ≈160 km de altitud mínima
-const GEO_ALTITUDE_KM = 35786; // altitud GEO para límite superior realista
+const MIN_SEMI_MAJOR = EARTH_RADIUS_KM + 160; // ≈160 km minimum altitude
+const GEO_ALTITUDE_KM = 35786; // GEO altitude used as realistic upper bound
 const MAX_SEMI_MAJOR = EARTH_RADIUS_KM + GEO_ALTITUDE_KM; // ≈42 164 km
 const CLOSURE_SURFACE_TOL_KM = 0.25;
 const CLOSURE_CARTESIAN_TOL_KM = 0.1;
@@ -267,16 +267,16 @@ export function propagateOrbit(settings, options = {}) {
 
     if (computedSemiMajor < MIN_SEMI_MAJOR) {
       resonanceInfo.warnings.push(
-        `La resonancia ${safeOrbits}:${safeRotations} requiere un semieje mayor inferior al mínimo operativo (${MIN_SEMI_MAJOR.toFixed(0)} km). ` +
-        'Se utiliza el límite inferior, perdiendo la repetición exacta.'
+        `Resonance ${safeOrbits}:${safeRotations} requires a semi-major axis below the operational minimum (${MIN_SEMI_MAJOR.toFixed(0)} km). ` +
+        'Using the lower bound, so the ground track will not repeat exactly.'
       );
       computedSemiMajor = MIN_SEMI_MAJOR;
       resonanceFeasible = false;
     }
     if (computedSemiMajor > MAX_SEMI_MAJOR) {
       resonanceInfo.warnings.push(
-        `La resonancia ${safeOrbits}:${safeRotations} supera el límite máximo (${MAX_SEMI_MAJOR.toFixed(0)} km). ` +
-        'Se utiliza el límite superior sin resonancia exacta.'
+        `Resonance ${safeOrbits}:${safeRotations} exceeds the maximum limit (${MAX_SEMI_MAJOR.toFixed(0)} km). ` +
+        'Using the upper bound without an exact resonance.'
       );
       computedSemiMajor = MAX_SEMI_MAJOR;
       resonanceFeasible = false;
@@ -287,7 +287,7 @@ export function propagateOrbit(settings, options = {}) {
 
     const perigeeTarget = computedSemiMajor * (1 - orbital.eccentricity);
     const apogeeTarget = computedSemiMajor * (1 + orbital.eccentricity);
-    const perigeeWarning = 'El perigeo cae por debajo de la superficie terrestre. Reduce la excentricidad o ajusta la resonancia.';
+    const perigeeWarning = 'Perigee drops below the Earth surface. Reduce eccentricity or adjust the resonance.';
     if (perigeeTarget <= EARTH_RADIUS_KM + 10) {
       resonanceInfo.warnings.push(perigeeWarning);
       resonanceFeasible = false;
@@ -302,7 +302,7 @@ export function propagateOrbit(settings, options = {}) {
   const apogee = semiMajor * (1 + orbital.eccentricity);
   resonanceInfo.perigeeKm = perigee;
   resonanceInfo.apogeeKm = apogee;
-  const perigeeWarning = 'El perigeo cae por debajo de la superficie terrestre. Reduce la excentricidad o ajusta la resonancia.';
+  const perigeeWarning = 'Perigee drops below the Earth surface. Reduce eccentricity or adjust the resonance.';
   if (perigee <= EARTH_RADIUS_KM + 10 && !resonanceInfo.warnings.includes(perigeeWarning)) {
     resonanceInfo.warnings.push(perigeeWarning);
   }
@@ -349,6 +349,7 @@ export function propagateOrbit(settings, options = {}) {
       lat: geo.lat,
       lon: ((geo.lon + 540) % 360) - 180,
       alt: geo.alt,
+      gmst,
     };
   });
 
@@ -368,7 +369,7 @@ export function propagateOrbit(settings, options = {}) {
     const lonDiff = ((end.lon - start.lon + 540) % 360) - 180;
     resonanceInfo.lonDriftDeg = lonDiff;
     if (resonance.enabled && surfaceGap > 0.5) {
-      resonanceInfo.warnings.push(`La trayectoria no cierra: desfase en superficie de ${surfaceGap.toFixed(2)} km.`);
+  resonanceInfo.warnings.push(`Ground track does not close: surface offset of ${surfaceGap.toFixed(2)} km.`);
       resonanceInfo.applied = false;
     }
     if (resonance.enabled && resonanceInfo.applied) {
@@ -404,35 +405,97 @@ export function propagateOrbit(settings, options = {}) {
   };
 }
 
-export function computeStationMetrics(dataPoints, station, optical) {
-  if (!station || !dataPoints?.length) {
-    return {
-      distanceKm: [],
-      elevationDeg: [],
-      lossDb: [],
-      doppler: [],
-      azimuthDeg: [],
-    };
-  }
-
+export function computeStationMetrics(dataPoints, station, optical, settings = null, atmosphere = null) {
   const distanceKm = [];
   const elevationDeg = [];
   const lossDb = [];
   const doppler = [];
   const azimuthDeg = [];
+  const r0_array = [];
+  const fG_array = [];
+  const theta0_array = [];
+  const wind_array = [];
+  const loss_aod_array = [];
+  const loss_abs_array = [];
+
+  const r0_zenith = atmosphere?.r0_zenith ?? 0.1;
+  const fG_zenith = atmosphere?.fG_zenith ?? 30;
+  const theta0_zenith = atmosphere?.theta0_zenith ?? 1.5;
+  const wind_rms = atmosphere?.wind_rms ?? 15;
+  const loss_aod_db = atmosphere?.loss_aod_db ?? 0;
+  const loss_abs_db = atmosphere?.loss_abs_db ?? 0;
+
+  if (!station || !dataPoints?.length) {
+    return {
+      distanceKm,
+      elevationDeg,
+      lossDb,
+      doppler,
+      azimuthDeg,
+      r0_array,
+      fG_array,
+      theta0_array,
+      wind_array,
+      loss_aod_array,
+      loss_abs_array,
+    };
+  }
 
   dataPoints.forEach((point) => {
     const los = losElevation(station, point.rEcef);
-    const geom = geometricLoss(los.distanceKm, optical.satAperture, optical.groundAperture, optical.wavelength);
+    const geom = geometricLoss(
+      los.distanceKm,
+      optical.satAperture,
+      optical.groundAperture,
+      optical.wavelength,
+    );
     const dop = dopplerFactor(station, point.rEcef, point.vEcef, optical.wavelength);
+
     distanceKm.push(los.distanceKm);
     elevationDeg.push(los.elevationDeg);
     lossDb.push(geom.lossDb);
     doppler.push(dop.factor);
     azimuthDeg.push(los.azimuthDeg);
+
+    let r0_actual = 0;
+    let fG_actual = 0;
+    let theta0_actual = 0;
+    let aod_loss_actual = 0;
+    let abs_loss_actual = 0;
+
+    if (los.elevationDeg > 0) {
+      const zenith_rad = (90 - los.elevationDeg) * DEG2RAD;
+      const cos_zenith = Math.max(Math.cos(zenith_rad), 1e-6);
+      const air_mass = 1 / cos_zenith;
+
+      r0_actual = r0_zenith * cos_zenith ** (3 / 5);
+      fG_actual = fG_zenith * cos_zenith ** (-9 / 5);
+      theta0_actual = theta0_zenith * cos_zenith ** (8 / 5);
+      aod_loss_actual = loss_aod_db * air_mass;
+      abs_loss_actual = loss_abs_db * air_mass;
+    }
+
+    r0_array.push(r0_actual);
+    fG_array.push(fG_actual);
+    theta0_array.push(theta0_actual);
+    wind_array.push(wind_rms);
+    loss_aod_array.push(aod_loss_actual);
+    loss_abs_array.push(abs_loss_actual);
   });
 
-  return { distanceKm, elevationDeg, lossDb, doppler, azimuthDeg };
+  return {
+    distanceKm,
+    elevationDeg,
+    lossDb,
+    doppler,
+    azimuthDeg,
+    r0_array,
+    fG_array,
+    theta0_array,
+    wind_array,
+    loss_aod_array,
+    loss_abs_array,
+  };
 }
 
 export function stationEcef(station) {

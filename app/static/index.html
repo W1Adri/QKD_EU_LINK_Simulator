@@ -4,13 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>QKD Orbit Designer</title>
+  <link rel="icon" href="/favicon.ico">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <link rel="stylesheet" href="/static/styles/app.css" />
   <script type="importmap">
     {
-      "imports": {
+      "imports": { 
         "three": "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js",
         "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/"
       }
@@ -22,135 +23,174 @@
     <header class="app-header">
       <div class="brand">
         <h1>QKD Orbit Designer</h1>
-        <p>Visualiza órbitas resonantes y enlaces ópticos Tierra-satélite</p>
+        <p>Visualize resonant orbits and Earth-to-space optical links</p>
       </div>
       <div class="header-actions">
-        <button id="btnPanelToggle" type="button" class="ghost">Ocultar panel</button>
-        <button id="btnMapStyle" type="button" class="ghost">Mapa satelital</button>
-        <button id="btnTheme" type="button" class="ghost" aria-pressed="false">Modo oscuro</button>
-      </div>
-      <div class="session-controls">
-        <form id="authForm" class="auth-form" autocomplete="off">
-          <label class="sr-only" for="authUsername">Nombre de usuario</label>
-          <input id="authUsername" name="username" type="text" placeholder="Usuario" autocomplete="username" required />
-          <label class="sr-only" for="authPassword">Contraseña</label>
-          <input id="authPassword" name="password" type="password" placeholder="Contraseña" autocomplete="current-password" required />
-          <div class="auth-buttons">
-            <button type="submit" name="intent" value="login">Entrar</button>
-            <button type="submit" name="intent" value="register">Registrar</button>
-          </div>
-        </form>
-        <div id="authSummary" class="auth-summary" hidden>
-          <span id="authGreeting"></span>
-          <button id="logoutButton" type="button">Cerrar sesión</button>
-        </div>
-        <p id="authFeedback" class="auth-feedback" role="status" aria-live="polite"></p>
+        <button id="btnPanelToggle" type="button" class="ghost">Hide panel</button>
+        <button id="btnMapStyle" type="button" class="ghost">Satellite map</button>
+        <button id="btnTheme" type="button" class="ghost" aria-pressed="false">Dark mode</button>
       </div>
     </header>
 
     <main class="workspace">
       <aside id="controlPanel" class="control-panel" data-collapsed="false" aria-expanded="true">
-        <nav class="panel-tabs" aria-label="Secciones de configuración">
-          <button type="button" class="is-active" data-section-target="orbit">Órbita y resonancia</button>
-          <button type="button" data-section-target="optics">Enlace óptico</button>
-          <button type="button" data-section-target="stations">Estaciones</button>
-          <button type="button" data-section-target="analytics">Gráficas</button>
-          <button type="button" data-section-target="chat">Chat</button>
+        <nav class="panel-tabs" aria-label="Configuration sections">
+          <button type="button" class="is-active" data-section-target="orbit">Orbit &amp; Resonance</button>
+          <button type="button" data-section-target="optics">Optical Link</button>
+          <button type="button" data-section-target="stations">Ground Stations</button>
+          <button type="button" data-section-target="analytics">Analytics</button>
+          <button type="button" data-section-target="weather">Weather Layers</button>
+          <button type="button" data-section-target="atmosphere">Atmospheric Models</button>
         </nav>
         <div class="panel-content">
           <section class="panel-section is-active" data-section="orbit">
             <header>
-              <h2>Configuración orbital</h2>
-              <p>Define la órbita y los parámetros iniciales del satélite.</p>
+              <h2>Orbit &amp; Resonance Setup</h2>
+              <p>Define the orbital elements, resonance targets and valid search ranges.</p>
             </header>
             <div class="field">
-              <label for="satelliteName">Nombre del satélite</label>
+              <div class="field-label">
+                <label for="satelliteName">Satellite name</label>
+                <button type="button" class="info-button" aria-label="What is the satellite name?" data-info="Identifier used to label the spacecraft across charts, exports and saved presets.">i</button>
+              </div>
               <input id="satelliteName" type="text" value="Sat-QKD" />
             </div>
             <div class="field">
-              <label for="epochInput">Época (UTC)</label>
+              <div class="field-label">
+                <label for="epochInput">Epoch (UTC)</label>
+                <button type="button" class="info-button" aria-label="What is the epoch?" data-info="Reference epoch in Coordinated Universal Time at which the orbital elements are valid.">i</button>
+              </div>
               <input id="epochInput" type="datetime-local" />
             </div>
             <form id="optimizerForm" class="optimizer" autocomplete="off">
               <div class="field-group">
-                <label for="semiMajor">Semieje mayor objetivo a₀ (km)</label>
-                <input id="semiMajor" type="number" step="1" min="6538" max="42164" value="6771" />
-                <input id="semiMajorSlider" type="range" min="6538" max="42164" value="6771" />
+                <div class="field">
+                  <div class="field-label">
+                    <label for="semiMajor">Target semi-major axis a0 (km)</label>
+                    <button type="button" class="info-button" aria-label="What is the semi-major axis?" data-info="Desired semi-major axis that the resonance search will try to match. It sets the size of the orbit.">i</button>
+                  </div>
+                  <input id="semiMajor" type="number" step="1" min="6538" max="42164" value="6771" />
+                  <input id="semiMajorSlider" type="range" min="6538" max="42164" value="6771" />
+                </div>
               </div>
               <div class="field-group">
-                <label for="optToleranceA">Tolerancia ± (km)</label>
-                <input id="optToleranceA" type="number" inputmode="decimal" min="0" max="1000" step="0.5" value="0" />
-                <input id="optToleranceSlider" type="range" min="0" max="1000" step="0.5" value="0" />
+                <div class="field">
+                  <div class="field-label">
+                    <label for="optToleranceA">Tolerance ± (km)</label>
+                    <button type="button" class="info-button" aria-label="What is the resonance tolerance?" data-info="Half-width around the target semi-major axis accepted when searching for integer resonance ratios.">i</button>
+                  </div>
+                  <input id="optToleranceA" type="number" inputmode="decimal" min="0" max="1000" step="0.5" value="0" />
+                  <input id="optToleranceSlider" type="range" min="0" max="1000" step="0.5" value="0" />
+                </div>
               </div>
               <div class="field-group inline">
                 <div class="field">
-                  <label for="resonanceOrbits">Órbitas (k)</label>
+                  <div class="field-label">
+                    <label for="resonanceOrbits">Resonance orbits k</label>
+                    <button type="button" class="info-button" aria-label="What is k?" data-info="Number of satellite orbits completed during one resonance cycle. Higher k means more orbital periods before the ground track repeats.">i</button>
+                  </div>
                   <input id="resonanceOrbits" type="number" min="1" max="500" step="1" value="1" />
                   <input id="resonanceOrbitsSlider" type="range" min="1" max="500" step="1" value="1" />
                 </div>
                 <div class="field">
-                  <label for="resonanceRotations">Rotaciones (j)</label>
+                  <div class="field-label">
+                    <label for="resonanceRotations">Earth rotations j</label>
+                    <button type="button" class="info-button" aria-label="What is j?" data-info="Number of Earth sidereal rotations that occur while the satellite completes k orbits. The j:k ratio defines the resonance.">i</button>
+                  </div>
                   <input id="resonanceRotations" type="number" min="1" max="500" step="1" value="1" />
                   <input id="resonanceRotationsSlider" type="range" min="1" max="500" step="1" value="1" />
                 </div>
               </div>
               <div class="field-group inline optimizer-bounds">
                 <div class="field">
-                  <label for="optMinRot">Rotaciones mín.</label>
+                  <div class="field-label">
+                    <label for="optMinRot">Min rotations j</label>
+                    <button type="button" class="info-button" aria-label="What is the minimum rotation bound?" data-info="Lower bound for the Earth rotation count considered during the resonance search.">i</button>
+                  </div>
                   <input id="optMinRot" type="number" inputmode="numeric" min="1" max="500" step="1" value="1" />
                   <input id="optMinRotSlider" type="range" min="1" max="500" step="1" value="1" />
                 </div>
                 <div class="field">
-                  <label for="optMaxRot">Rotaciones máx.</label>
+                  <div class="field-label">
+                    <label for="optMaxRot">Max rotations j</label>
+                    <button type="button" class="info-button" aria-label="What is the maximum rotation bound?" data-info="Upper bound for the Earth rotation count explored by the resonance solver.">i</button>
+                  </div>
                   <input id="optMaxRot" type="number" inputmode="numeric" min="1" max="500" step="1" value="120" />
                   <input id="optMaxRotSlider" type="range" min="1" max="500" step="1" value="120" />
                 </div>
               </div>
               <div class="field-group inline optimizer-bounds">
                 <div class="field">
-                  <label for="optMinOrb">Órbitas mín.</label>
+                  <div class="field-label">
+                    <label for="optMinOrb">Min orbits k</label>
+                    <button type="button" class="info-button" aria-label="What is the minimum orbit bound?" data-info="Lower limit for the satellite orbit count considered by the resonance solver.">i</button>
+                  </div>
                   <input id="optMinOrb" type="number" inputmode="numeric" min="1" max="500" step="1" value="1" />
                   <input id="optMinOrbSlider" type="range" min="1" max="500" step="1" value="1" />
                 </div>
                 <div class="field">
-                  <label for="optMaxOrb">Órbitas máx.</label>
+                  <div class="field-label">
+                    <label for="optMaxOrb">Max orbits k</label>
+                    <button type="button" class="info-button" aria-label="What is the maximum orbit bound?" data-info="Upper limit for the satellite orbit count scanned while searching resonances.">i</button>
+                  </div>
                   <input id="optMaxOrb" type="number" inputmode="numeric" min="1" max="500" step="1" value="60" />
                   <input id="optMaxOrbSlider" type="range" min="1" max="500" step="1" value="60" />
                 </div>
               </div>
-              <p class="hint" data-resonance-hint>Utiliza "Buscar resonancias" para ajustar j/k al semieje objetivo.</p>
+              <p class="hint" data-resonance-hint>Use "Search resonances" to scan for j:k ratios that match the target semi-major axis.</p>
               <div class="optimizer-actions">
-                <button id="optSearchBtn" type="submit">Buscar resonancias</button>
+                <button id="optSearchBtn" type="submit">Search resonances</button>
               </div>
               <p id="optSummary" class="hint"></p>
               <div id="optResults" class="optimizer-results"></div>
             </form>
             <div class="field-group">
-              <label for="eccentricity">Excentricidad e</label>
-              <input id="eccentricity" type="number" step="0.001" min="0" max="0.2" value="0.001" />
-              <input id="eccentricitySlider" type="range" min="0" max="0.2" step="0.001" value="0.001" />
+              <div class="field">
+                <div class="field-label">
+                  <label for="eccentricity">Eccentricity e</label>
+                  <button type="button" class="info-button" aria-label="What is eccentricity?" data-info="Controls the shape of the orbit. e = 0 is circular, higher values increase perigee-apogee difference." >i</button>
+                </div>
+                <input id="eccentricity" type="number" step="0.001" min="0" max="0.2" value="0.001" />
+                <input id="eccentricitySlider" type="range" min="0" max="0.2" step="0.001" value="0.001" />
+              </div>
             </div>
             <div class="field-group">
-              <label for="inclination">Inclinación i (°)</label>
-              <input id="inclination" type="number" step="0.1" min="0" max="180" value="53" />
-              <input id="inclinationSlider" type="range" min="0" max="180" step="0.1" value="53" />
+              <div class="field">
+                <div class="field-label">
+                  <label for="inclination">Inclination i (deg)</label>
+                  <button type="button" class="info-button" aria-label="What is inclination?" data-info="Tilt of the orbital plane with respect to Earth's equator, in degrees." >i</button>
+                </div>
+                <input id="inclination" type="number" step="0.1" min="0" max="180" value="53" />
+                <input id="inclinationSlider" type="range" min="0" max="180" step="0.1" value="53" />
+              </div>
             </div>
             <div class="field-group inline">
               <div class="field">
-                <label for="raan">RAAN Ω (°)</label>
+                <div class="field-label">
+                  <label for="raan">RAAN Ω (deg)</label>
+                  <button type="button" class="info-button" aria-label="What is RAAN?" data-info="Right Ascension of the Ascending Node. Sets the orientation of the orbital plane with respect to the inertial frame." >i</button>
+                </div>
                 <input id="raan" type="number" step="0.1" min="0" max="360" value="0" />
                 <input id="raanSlider" type="range" min="0" max="360" step="0.1" value="0" />
               </div>
               <div class="field">
-                <label for="argPerigee">Argumento de perigeo ω (°)</label>
+                <div class="field-label">
+                  <label for="argPerigee">Argument of perigee ω (deg)</label>
+                  <button type="button" class="info-button" aria-label="What is argument of perigee?" data-info="Angle from the ascending node to the orbit's perigee within the orbital plane." >i</button>
+                </div>
                 <input id="argPerigee" type="number" step="0.1" min="0" max="360" value="0" />
                 <input id="argPerigeeSlider" type="range" min="0" max="360" step="0.1" value="0" />
               </div>
             </div>
             <div class="field-group">
-              <label for="meanAnomaly">Anomalía media M₀ (°)</label>
-              <input id="meanAnomaly" type="number" step="0.1" min="0" max="360" value="0" />
-              <input id="meanAnomalySlider" type="range" min="0" max="360" step="0.1" value="0" />
+              <div class="field">
+                <div class="field-label">
+                  <label for="meanAnomaly">Mean anomaly M₀ (deg)</label>
+                  <button type="button" class="info-button" aria-label="What is mean anomaly?" data-info="Defines the spacecraft position along the orbit at the epoch, expressed as mean anomaly." >i</button>
+                </div>
+                <input id="meanAnomaly" type="number" step="0.1" min="0" max="360" value="0" />
+                <input id="meanAnomalySlider" type="range" min="0" max="360" step="0.1" value="0" />
+              </div>
             </div>
           </section>
 
@@ -158,118 +198,354 @@
 
           <section class="panel-section" data-section="optics">
             <header>
-              <h2>Enlace óptico</h2>
-              <p>Define aperturas, longitud de onda y muestreo temporal.</p>
+              <h2>Optical Link</h2>
+              <p>Set the apertures, wavelength and temporal sampling used to evaluate the link budget.</p>
             </header>
             <div class="field-group">
-              <label for="satAperture">Apertura satélite (m)</label>
-              <input id="satAperture" type="number" min="0.1" max="3" step="0.05" value="0.6" />
-              <input id="satApertureSlider" type="range" min="0.1" max="3" step="0.05" value="0.6" />
+              <div class="field">
+                <div class="field-label">
+                  <label for="satAperture">Satellite aperture (m)</label>
+                  <button type="button" class="info-button" aria-label="Satellite aperture info" data-info="Diameter of the satellite transmitting telescope. Larger apertures reduce beam divergence and geometric losses.">i</button>
+                </div>
+                <input id="satAperture" type="number" min="0.1" max="3" step="0.05" value="0.6" />
+                <input id="satApertureSlider" type="range" min="0.1" max="3" step="0.05" value="0.6" />
+              </div>
             </div>
             <div class="field-group">
-              <label for="groundAperture">Apertura estación (m)</label>
-              <input id="groundAperture" type="number" min="0.1" max="5" step="0.05" value="1.0" />
-              <input id="groundApertureSlider" type="range" min="0.1" max="5" step="0.05" value="1.0" />
+              <div class="field">
+                <div class="field-label">
+                  <label for="groundAperture">Ground aperture (m)</label>
+                  <button type="button" class="info-button" aria-label="Ground aperture info" data-info="Diameter of the ground station receiving telescope. It defines the collecting area and affects coupling efficiency.">i</button>
+                </div>
+                <input id="groundAperture" type="number" min="0.1" max="5" step="0.05" value="1.0" />
+                <input id="groundApertureSlider" type="range" min="0.1" max="5" step="0.05" value="1.0" />
+              </div>
             </div>
             <div class="field-group">
-              <label for="wavelength">Longitud de onda (nm)</label>
-              <input id="wavelength" type="number" min="600" max="1700" step="1" value="810" />
-              <input id="wavelengthSlider" type="range" min="600" max="1700" step="1" value="810" />
+              <div class="field">
+                <div class="field-label">
+                  <label for="wavelength">Wavelength (nm)</label>
+                  <button type="button" class="info-button" aria-label="Wavelength info" data-info="Operating wavelength of the optical link in nanometres. It drives diffraction, atmospheric absorption and detector efficiency.">i</button>
+                </div>
+                <input id="wavelength" type="number" min="600" max="1700" step="1" value="810" />
+                <input id="wavelengthSlider" type="range" min="600" max="1700" step="1" value="810" />
+              </div>
             </div>
             <div class="field-group">
-              <label for="samplesPerOrbit">Muestras por órbita</label>
-              <input id="samplesPerOrbit" type="number" min="60" max="720" step="10" value="180" />
-              <input id="samplesPerOrbitSlider" type="range" min="60" max="720" step="10" value="180" />
+              <div class="field">
+                <div class="field-label">
+                  <label for="samplesPerOrbit">Samples per orbit</label>
+                  <button type="button" class="info-button" aria-label="Samples per orbit info" data-info="Number of time samples evaluated for each orbital period. More samples capture finer variations along the pass at the cost of computation time.">i</button>
+                </div>
+                <input id="samplesPerOrbit" type="number" min="60" max="720" step="10" value="180" />
+                <input id="samplesPerOrbitSlider" type="range" min="60" max="720" step="10" value="180" />
+              </div>
             </div>
           </section>
 
           <section class="panel-section" data-section="stations">
             <header>
-              <h2>Estaciones de tierra</h2>
-              <p>Selecciona estaciones, crea nuevas y analiza la conexión.</p>
+              <h2>Ground Stations</h2>
+              <p>Select, add or focus ground terminals and define site-specific turbulence inputs.</p>
             </header>
-            <div class="station-toolbar">
-              <select id="stationSelect"></select>
-              <button id="btnAddStation" type="button">Añadir</button>
-              <button id="btnFocusStation" type="button">Enfocar</button>
+            <div class="field">
+              <div class="field-label">
+                <label for="stationSelect">Active ground station</label>
+                <button type="button" class="info-button" aria-label="Ground station selector info" data-info="Choose the ground station used for link calculations. Custom stations can be added or removed below.">i</button>
+              </div>
             </div>
-            <dl class="metrics" id="stationMetrics">
-              <div><dt>Distancia</dt><dd id="distanceMetric">--</dd></div>
-              <div><dt>Elevación</dt><dd id="elevationMetric">--</dd></div>
-              <div><dt>Ángulo cenital</dt><dd id="zenithMetric">--</dd></div>
-              <div><dt>Pérdida geométrica</dt><dd id="lossMetric">--</dd></div>
-              <div><dt>Factor Doppler</dt><dd id="dopplerMetric">--</dd></div>
-            </dl>
+            <div class="station-toolbar">
+              <select id="stationSelect" aria-label="Ground station list"></select>
+              <button id="btnAddStation" type="button" title="Add a new ground station">Add</button>
+              <button id="btnDeleteStation" type="button" title="Remove the selected station">Delete</button>
+              <button id="btnFocusStation" type="button" title="Fly the map to the selected station">Focus</button>
+            </div>
+
+            <h4>Site turbulence parameters</h4>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="groundCn2Day">Ground Cn² (day) at h = 0</label>
+                  <button type="button" class="info-button" aria-label="Daytime Cn2 info" data-info="Surface structure constant used when the station is sunlit. Guides the Hufnagel-Valley turbulence profile generation.">i</button>
+                </div>
+                <input id="groundCn2Day" type="text" value="5e-14" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="groundCn2Night">Ground Cn² (night) at h = 0</label>
+                  <button type="button" class="info-button" aria-label="Nighttime Cn2 info" data-info="Surface structure constant used during local night-time conditions. Lower values usually indicate calmer turbulence." >i</button>
+                </div>
+                <input id="groundCn2Night" type="text" value="5e-15" />
+              </div>
+            </div>
           </section>
 
           <section class="panel-section" data-section="analytics">
             <header>
-              <h2>Gráficas</h2>
-              <p>Vista rápida de pérdidas, elevación y distancia.</p>
+              <h2>Analytics</h2>
+              <p>Inspect instantaneous link performance and plot full-pass trends.</p>
             </header>
-            <div class="mini-chart" id="chartLoss">Pérdidas geométricas</div>
-            <div class="mini-chart" id="chartElevation">Elevación</div>
-            <div class="mini-chart" id="chartDistance">Distancia</div>
+            <section class="instant-metrics" aria-live="polite">
+              <h4>Link metrics at current time</h4>
+              <p>
+                <span class="metric-label">Link loss (dB)
+                  <button type="button" class="info-button" aria-label="Link loss info" data-info="Total geometric plus atmospheric attenuation in decibels at the current simulation time.">i</button>
+                </span>
+                <strong id="lossMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Elevation (deg)
+                  <button type="button" class="info-button" aria-label="Elevation info" data-info="Angle between the station horizon and the satellite line-of-sight. Higher elevation generally improves link quality.">i</button>
+                </span>
+                <strong id="elevationMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Range (km)
+                  <button type="button" class="info-button" aria-label="Range info" data-info="Instantaneous slant range between the satellite and the ground station in kilometres.">i</button>
+                </span>
+                <strong id="distanceMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Zenith angle (deg)
+                  <button type="button" class="info-button" aria-label="Zenith angle info" data-info="Complementary angle to elevation, measuring the deviation from the station zenith.">i</button>
+                </span>
+                <strong id="zenithMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Doppler shift (Hz)
+                  <button type="button" class="info-button" aria-label="Doppler info" data-info="Frequency offset caused by the relative radial velocity between satellite and ground station.">i</button>
+                </span>
+                <strong id="dopplerMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Fried parameter r0 (m)
+                  <button type="button" class="info-button" aria-label="Fried parameter info" data-info="Atmospheric coherence diameter derived from the current turbulence model. Larger r0 means weaker turbulence.">i</button>
+                </span>
+                <strong id="r0Metric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Greenwood frequency (Hz)
+                  <button type="button" class="info-button" aria-label="Greenwood frequency info" data-info="Characteristic turbulence temporal frequency that sets the bandwidth required for adaptive optics.">i</button>
+                </span>
+                <strong id="fGMetric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">Isoplanatic angle (&quot;)
+                  <button type="button" class="info-button" aria-label="Isoplanatic angle info" data-info="Angular region over which wavefront distortions are correlated. Expressed in arcseconds." >i</button>
+                </span>
+                <strong id="theta0Metric">--</strong>
+              </p>
+              <p>
+                <span class="metric-label">RMS wind (m/s)
+                  <button type="button" class="info-button" aria-label="Wind info" data-info="Root-mean-square high-altitude wind speed driving turbulence layers within the chosen model.">i</button>
+                </span>
+                <strong id="windMetric">--</strong>
+              </p>
+            </section>
+            <h4>Full pass metrics</h4>
+            <p>Select a metric to plot its evolution over the entire simulated pass.</p>
+            <ul class="metric-graph-list">
+              <li>
+                <span>Geometric loss (dB)
+                  <button type="button" class="info-button" aria-label="Geometric loss plot info" data-info="Plots the free-space and pointing losses due to beam divergence and station aperture over the full pass.">i</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="loss">Show graph</button>
+              </li>
+              <li>
+                <span>Station elevation (deg)
+                  <button type="button" class="info-button" aria-label="Elevation plot info" data-info="Shows the elevation angle of the satellite as seen from the station versus time." >i</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="elevation">Show graph</button>
+              </li>
+              <li>
+                <span>Satellite-ground range (km)
+                  <button type="button" class="info-button" aria-label="Range plot info" data-info="Displays the changing distance between satellite and ground station for the selected pass." >i</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="distance">Show graph</button>
+              </li>
+              <li>
+                <span>Fried parameter r0 vs time
+                  <button type="button" class="info-button" aria-label="r0 plot info" data-info="Tracks the turbulence coherence diameter predicted along the pass, useful for adaptive optics design." >i</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="r0">Show graph</button>
+              </li>
+              <li>
+                <span>Greenwood frequency vs time
+                  <button type="button" class="info-button" aria-label="fG plot info" data-info="Shows how the Greenwood frequency evolves, indicating the turbulence bandwidth requirements." >i</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="fG">Show graph</button>
+              </li>
+              <li>
+                <span>Isoplanatic angle vs time
+                  <button type="button" class="info-button" aria-label="Isoplanatic plot info" data-info="Evolution of the isoplanatic angle, useful for evaluating adaptive optics field-of-view.">i</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="theta0">Show graph</button>
+              </li>
+              <li>
+                <span>RMS wind speed vs time
+                  <button type="button" class="info-button" aria-label="Wind plot info" data-info="High-altitude wind speed used in turbulence models across the simulated pass." >i</button>
+                </span>
+                <button type="button" class="btn-show-graph" data-graph-id="wind">Show graph</button>
+              </li>
+            </ul>
           </section>
 
-          <section class="panel-section" data-section="chat">
+          <section class="panel-section" data-section="weather">
             <header>
-              <h2>Chat de misión</h2>
-              <p>Coordina el análisis con el resto del equipo.</p>
+              <h2>Weather Layers</h2>
+              <p>Sample Open-Meteo pressure level fields globally and project them on the map.</p>
             </header>
-            <div class="chat-panel">
-              <div id="chatLog" class="chat-log" role="log" aria-live="polite"></div>
-              <form id="chatForm" class="chat-form">
-                <label class="sr-only" for="chatMessage">Nuevo mensaje</label>
-                <textarea id="chatMessage" name="message" rows="3" placeholder="Escribe un mensaje" required></textarea>
-                <div class="chat-actions">
-                  <button type="submit">Enviar</button>
-                  <button id="btnRefreshChats" type="button" class="ghost">Actualizar</button>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="weatherFieldSelect">Parameter</label>
+                  <button type="button" class="info-button" aria-label="Weather field info" data-info="Choose the atmospheric parameter to sample globally from Open-Meteo forecast or reanalysis data.">i</button>
                 </div>
-              </form>
-              <div class="chat-admin">
-                <button id="btnUserCount" type="button" class="ghost">Contar usuarios</button>
-                <span id="userCountLabel" class="chat-meta" aria-live="polite"></span>
+                <select id="weatherFieldSelect"></select>
               </div>
-              <p id="chatStatus" class="chat-status" role="status" aria-live="polite"></p>
-              <p id="chatHint" class="chat-hint">Inicia sesión para participar en el chat.</p>
+            </div>
+            <div class="field-group inline">
+              <div class="field">
+                <div class="field-label">
+                  <label for="weatherLevelSelect">Pressure level (hPa)</label>
+                  <button type="button" class="info-button" aria-label="Pressure level info" data-info="Select the pressure surface that corresponds to the desired altitude band.">i</button>
+                </div>
+                <select id="weatherLevelSelect"></select>
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="weatherSamples">Samples</label>
+                  <button type="button" class="info-button" aria-label="Samples info" data-info="Controls the number of sample points taken worldwide. More samples provide smoother gradients but take longer to fetch.">i</button>
+                </div>
+                <input id="weatherSamples" type="number" min="16" max="900" step="8" value="120" />
+                <input id="weatherSamplesSlider" type="range" min="16" max="900" step="8" value="120" />
+              </div>
+            </div>
+            <div class="field-group">
+              <div class="field">
+                <div class="field-label">
+                  <label for="weatherTime">Field timestamp (UTC)</label>
+                  <button type="button" class="info-button" aria-label="Weather time info" data-info="UTC time corresponding to the hourly slice requested from Open-Meteo.">i</button>
+                </div>
+                <input id="weatherTime" type="datetime-local" />
+              </div>
+            </div>
+            <div class="field-group inline">
+              <button id="weatherFetchBtn" type="button">Fetch field</button>
+              <button id="weatherClearBtn" type="button" class="ghost">Clear overlay</button>
+            </div>
+            <p id="weatherStatus" class="hint"></p>
+          </section>
+
+          <section class="panel-section" data-section="atmosphere">
+            <header>
+              <h2>Atmospheric Models</h2>
+              <p>Select turbulence and attenuation models fed by Open-Meteo data to drive the link budget.</p>
+            </header>
+            <fieldset class="model-selector" role="radiogroup" aria-label="Atmospheric turbulence models">
+              <legend class="sr-only">Atmospheric turbulence model</legend>
+              <label class="model-card">
+                <input type="radio" name="atmosModel" value="hufnagel-valley" data-atmos-model="hufnagel-valley" checked />
+                <div class="model-card-body">
+                  <div class="model-card-header">
+                    <span>Hufnagel-Valley 5/7</span>
+                    <button type="button" class="info-button" aria-label="Hufnagel-Valley info" data-info="Classic parametric turbulence profile combining surface Cn² values with high-altitude wind speed. Provides analytic formulas for r0, θ0 and fG.">i</button>
+                  </div>
+                  <p>Uses surface Cn² day/night inputs and Open-Meteo wind components at 300 hPa to estimate turbulence strength.</p>
+                  <ul class="model-data-list">
+                    <li><strong>Open-Meteo</strong>: wind_u_component_300hPa, wind_v_component_300hPa</li>
+                    <li><strong>Site inputs</strong>: Cn²(0) day/night</li>
+                    <li><strong>Outputs</strong>: r₀, θ₀, f<sub>G</sub>, wind RMS</li>
+                  </ul>
+                </div>
+              </label>
+              <label class="model-card">
+                <input type="radio" name="atmosModel" value="bufton" data-atmos-model="bufton" />
+                <div class="model-card-body">
+                  <div class="model-card-header">
+                    <span>Bufton boundary-layer</span>
+                    <button type="button" class="info-button" aria-label="Bufton info" data-info="Empirical boundary-layer model blending surface meteorology with wind shear to estimate Cn² vertical gradients.">i</button>
+                  </div>
+                  <p>Extends the surface Cn² inputs with wind and temperature gradients from Open-Meteo to refine low-altitude turbulence.</p>
+                  <ul class="model-data-list">
+                    <li><strong>Open-Meteo</strong>: wind components at 300/500/850 hPa, temperature_850hPa</li>
+                    <li><strong>Site inputs</strong>: Cn²(0) day/night, local lapse rate (future)</li>
+                    <li><strong>Outputs</strong>: Layered r₀, θ₀, scintillation index</li>
+                  </ul>
+                </div>
+              </label>
+              <label class="model-card">
+                <input type="radio" name="atmosModel" value="greenwood" data-atmos-model="greenwood" />
+                <div class="model-card-body">
+                  <div class="model-card-header">
+                    <span>Greenwood lidar-inspired</span>
+                    <button type="button" class="info-button" aria-label="Greenwood model info" data-info="Piecewise turbulence model driven by measured wind speeds and temperature to estimate adaptive optics bandwidth requirements.">i</button>
+                  </div>
+                  <p>Targets adaptive optics design by combining wind-shear derived layer speeds with humidity to infer scintillation and coherence time.</p>
+                  <ul class="model-data-list">
+                    <li><strong>Open-Meteo</strong>: wind_u/v at 200 &amp; 300 hPa, temperature_200hPa, relative_humidity_700hPa</li>
+                    <li><strong>Derived</strong>: Greenwood frequency, coherence time τ<sub>0</sub></li>
+                  </ul>
+                </div>
+              </label>
+            </fieldset>
+            <div class="data-sources">
+              <div class="field-label">
+                <h4>Planned Open-Meteo drivers</h4>
+                <button type="button" class="info-button" aria-label="Open-Meteo data info" data-info="Overview of the atmospheric variables that will be requested from Open-Meteo to feed the selected model.">i</button>
+              </div>
+              <ul class="data-list">
+                <li>High-altitude wind vectors (200 hPa, 300 hPa, 500 hPa)</li>
+                <li>Temperature profiles at 200/300/500/850 hPa</li>
+                <li>Relative humidity or specific humidity for moisture-dependent losses</li>
+                <li>Shortwave radiation and direct normal irradiance for background noise estimates</li>
+                <li>Surface pressure and planetary boundary layer height (future integration)</li>
+              </ul>
             </div>
           </section>
         </div>
       </aside>
 
-      <div id="panelResizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-controls="controlPanel" aria-label="Ajustar anchura del panel" tabindex="0"></div>
+      <div id="panelResizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-controls="controlPanel" aria-label="Adjust panel width" tabindex="0"></div>
 
       <section class="visual-area">
-        <button id="panelReveal" class="panel-reveal" type="button" hidden>Mostrar controles</button>
+        <button id="panelReveal" class="panel-reveal" type="button" hidden>Show controls</button>
         <div class="view-toolbar" role="tablist">
-          <button class="is-active" data-view="dual" role="tab" aria-selected="true">Vista dual</button>
-          <button data-view="3d" role="tab" aria-selected="false">Solo 3D</button>
-          <button data-view="2d" role="tab" aria-selected="false">Solo 2D</button>
+          <button class="is-active" data-view="dual" role="tab" aria-selected="true">Dual view</button>
+          <button data-view="3d" role="tab" aria-selected="false">3D only</button>
+          <button data-view="2d" role="tab" aria-selected="false">2D only</button>
         </div>
         <div class="view-grid" id="viewGrid" data-active-view="dual">
-          <div id="threeContainer" class="view-pane view-3d" aria-label="Globo 3D">
+          <div id="threeContainer" class="view-pane view-3d" aria-label="3D globe">
             <canvas id="threeCanvas" class="globe-canvas" aria-hidden="true"></canvas>
-            <div id="threeFallback" hidden>No se pudo inicializar la escena 3D.</div>
+            <div id="threeFallback" hidden>Could not initialize the 3D scene.</div>
           </div>
-          <div id="mapContainer" class="view-pane view-2d" aria-label="Mapa 2D"></div>
+          <div id="mapContainer" class="view-pane view-2d" aria-label="2D map"></div>
         </div>
         <div class="timeline">
           <div class="timeline-header">
-            <strong>Control temporal</strong>
+            <strong>Time control</strong>
             <div class="timeline-actions">
               <button id="btnPlay" type="button">▶</button>
               <button id="btnPause" type="button">⏸</button>
               <button id="btnStepBack" type="button">⏪</button>
               <button id="btnStepForward" type="button">⏩</button>
               <button id="btnResetTime" type="button">↺</button>
-              <label for="timeWarp">Velocidad</label>
+              <label for="timeWarp">Speed</label>
               <select id="timeWarp">
                 <option value="1">x1</option>
+                <option value="5">x5</option>
                 <option value="10">x10</option>
+                <option value="30">x30</option>
                 <option value="60" selected>x60</option>
+                <option value="120">x120</option>
                 <option value="300">x300</option>
+                <option value="600">x600</option>
                 <option value="900">x900</option>
+                <option value="1800">x1800</option>
+                <option value="3600">x3600</option>
               </select>
             </div>
           </div>
@@ -277,25 +553,31 @@
           <div class="timeline-readout">
             <span>t = <span id="timeLabel">0 s</span></span>
             <span class="spacer">·</span>
-            <span>Elevación: <span id="elevationLabel">--</span></span>
+            <span>Elevation: <span id="elevationLabel">--</span></span>
             <span class="spacer">·</span>
-            <span>Pérdida geométrica: <span id="lossLabel">--</span></span>
+            <span>Geometric loss: <span id="lossLabel">--</span></span>
           </div>
         </div>
       </section>
     </main>
   </div>
 
-  <dialog id="stationDialog">
+  <dialog id="stationDialog" class="station-dialog">
     <form method="dialog" class="dialog-content">
-      <h2>Nueva estación de tierra</h2>
-      <label>Nombre<input id="stationName" required /></label>
-      <label>Latitud (°)<input id="stationLat" type="number" min="-90" max="90" step="0.0001" required /></label>
-      <label>Longitud (°)<input id="stationLon" type="number" min="-180" max="180" step="0.0001" required /></label>
-      <label>Apertura (m)<input id="stationAperture" type="number" min="0.1" max="8" step="0.1" value="1.0" required /></label>
+      <div class="dialog-header dialog-drag-handle">
+        <h2>New ground station</h2>
+      </div>
+      <label>Name<input id="stationName" required /></label>
+      <label>Latitude (°)<input id="stationLat" type="number" min="-90" max="90" step="0.0001" placeholder="Enter or pick from map" required /></label>
+      <label>Longitude (°)<input id="stationLon" type="number" min="-180" max="180" step="0.0001" placeholder="Enter or pick from map" required /></label>
+      <label>Aperture (m)<input id="stationAperture" type="number" min="0.1" max="8" step="0.1" value="1.0" required /></label>
+      <div class="station-picker-actions">
+        <button id="stationPickOnMap" type="button">Pick on map</button>
+        <p id="stationPickHint" class="station-pick-hint" hidden>Click the map to set the location.</p>
+      </div>
       <menu>
-        <button value="cancel">Cancelar</button>
-        <button id="stationSave" value="default">Guardar</button>
+        <button id="stationCancel" type="button">Cancel</button>
+        <button id="stationSave" value="default">Save</button>
       </menu>
     </form>
   </dialog>
@@ -304,8 +586,16 @@
     <option></option>
   </template>
 
+  <dialog id="graphModal" aria-labelledby="graphModalTitle">
+    <h3 id="graphModalTitle">Graph</h3>
+    <div class="modal-chart-container">
+      <canvas id="modalChartCanvas"></canvas>
+    </div>
+    <button id="closeGraphModal" type="button">Close</button>
+  </dialog> 
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" crossorigin="anonymous"></script>
   <script type="module" src="/static/js/main.js"></script>
-  <script type="module" src="/static/js/authChat.js"></script>
 </body>
 </html>

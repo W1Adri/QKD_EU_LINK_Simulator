@@ -33,14 +33,21 @@ body[data-theme="dark"] {
   box-sizing: border-box;
 }
 
+/* 1. Forzar a que la página ocupe el 100% de la ventana SIN SCROLL */
+html,
+body {
+  height: 100vh;
+  overflow: hidden; /* ¡LA CLAVE! Esto detiene el scroll de la página */
+}
+
 body {
   margin: 0;
   font-family: var(--font-family);
   background: var(--bg);
   color: var(--text);
-  min-height: 100vh;
   display: flex;
   flex-direction: column;
+  height: 100vh;
 }
 
 a {
@@ -69,6 +76,59 @@ button {
   padding: 0.45rem 0.85rem;
   font-weight: 500;
   transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.info-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  margin-left: 0.35rem;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(79, 70, 229, 0.12);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.info-button:hover,
+.info-button:focus-visible {
+  background: rgba(79, 70, 229, 0.2);
+  border-color: var(--accent);
+  color: var(--accent);
+  outline: none;
+}
+
+.info-button:active {
+  transform: scale(0.96);
+}
+
+.info-tooltip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 320px;
+  padding: 0.6rem 0.75rem;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  font-size: 0.85rem;
+  line-height: 1.3;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity var(--transition), transform var(--transition);
+}
+
+.info-tooltip[data-visible="true"] {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .sr-only {
@@ -100,8 +160,10 @@ button.ghost:hover {
 .app-shell {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
   width: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
 .app-header {
@@ -116,6 +178,7 @@ button.ghost:hover {
   box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
   position: relative;
   z-index: 10;
+  flex-shrink: 0;
 }
 
 .brand {
@@ -142,67 +205,15 @@ button.ghost:hover {
   align-items: center;
 }
 
-.session-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  align-items: flex-start;
-  min-width: 240px;
-}
-
-.auth-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-  align-items: center;
-}
-
-.auth-form input {
-  padding: 0.4rem 0.6rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--surface-alt);
-  min-width: 130px;
-}
-
-.auth-form input:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
-}
-
-.auth-buttons {
-  display: flex;
-  gap: 0.35rem;
-}
-
-.auth-summary {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 500;
-}
-
-.auth-feedback {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  min-height: 1.2rem;
-}
-
-.auth-feedback[data-status="error"] {
-  color: #dc2626;
-}
-
-.auth-feedback[data-status="success"] {
-  color: #16a34a;
-}
-
+/* 2. El contenedor principal (workspace) debe ser flex y ocupar el 100% */
 .workspace {
   flex: 1;
   display: flex;
-  overflow: hidden;
+  height: 100%;       /* Asegura que ocupe el alto de la ventana */
+  min-height: 0;
+  overflow: hidden;  /* Asegura que el workspace en sí no haga scroll */
   position: relative;
+  /* */
 }
 
 .workspace.panel-collapsed .panel-reveal {
@@ -210,6 +221,18 @@ button.ghost:hover {
   pointer-events: auto;
 }
 
+.workspace.panel-collapsed .control-panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--panel-width);
+  max-width: var(--panel-width);
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+
+/* 3. El panel de control SÍ PUEDE tener scroll interno */
 .control-panel {
   --panel-width: 360px;
   flex: 0 0 var(--panel-width);
@@ -223,7 +246,18 @@ button.ghost:hover {
   transition: transform var(--transition), box-shadow var(--transition);
   box-shadow: 16px 0 30px rgba(15, 23, 42, 0.04);
   z-index: 5;
-  overflow: hidden;
+  height: 100%;      /* Debe ocupar el 100% de la altura */
+  overflow-y: auto; /* ¡LA CLAVE! Scroll solo aquí */
+  overflow-x: hidden;
+  flex-shrink: 0;
+  /* */
+}
+
+#controlPanel {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex-shrink: 0;
 }
 
 .control-panel[data-collapsed="true"] {
@@ -233,6 +267,11 @@ button.ghost:hover {
 
 .workspace.panel-collapsed .panel-resizer {
   display: none;
+}
+
+.workspace.panel-collapsed .visual-area,
+.workspace.panel-collapsed .view-grid {
+  width: 100%;
 }
 
 .panel-tabs {
@@ -261,11 +300,11 @@ button.ghost:hover {
 
 .panel-content {
   flex: 1;
-  overflow-y: auto;
   padding: 1.2rem 1.8rem 1.6rem;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  min-height: 0;
 }
 
 .panel-resizer {
@@ -550,11 +589,51 @@ input[type="range"] {
 
 .station-toolbar {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.6rem;
+  align-items: center;
 }
 
 .station-toolbar select {
-  flex: 1;
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.station-toolbar button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.station-picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.station-picker-actions button {
+  flex: 0 0 auto;
+}
+
+.station-pick-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.station-pick-hint.is-active {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.station-picker-marker-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #f97316;
+  background: rgba(249, 115, 22, 0.2);
+  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.15);
+  pointer-events: none;
 }
 
 .metrics {
@@ -588,14 +667,42 @@ input[type="range"] {
   font-size: 0.85rem;
 }
 
-.visual-area {
-  flex: 1;
+.instant-metrics {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 1rem 1.1rem;
   display: flex;
   flex-direction: column;
-  padding: 1.2rem 1.5rem 1.5rem;
-  gap: 1rem;
-  transition: margin var(--transition);
+  gap: 0.4rem;
+  box-shadow: 0 10px 18px rgba(15, 23, 42, 0.06);
+}
+
+.instant-metrics h4 {
+  margin: 0 0 0.2rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.instant-metrics p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.instant-metrics p strong {
+  color: var(--text);
+}
+
+/* 4. Área visual SIN scroll */
+.visual-area {
   position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* Importante para que no se muevan los mapas */
+  /* */
 }
 
 .workspace.panel-collapsed .visual-area {
@@ -633,6 +740,16 @@ input[type="range"] {
   gap: 1rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-auto-rows: 1fr;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 5. Contenedor de vistas sin scroll */
+#viewGrid {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden; /* Asegura que los mapas no generen scroll */
+  /* */
 }
 
 .view-grid[data-active-view="3d"] {
@@ -657,7 +774,7 @@ input[type="range"] {
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   overflow: hidden;
-  min-height: 320px;
+  min-height: 0;
   box-shadow: var(--shadow);
   display: flex;
 }
@@ -667,6 +784,15 @@ input[type="range"] {
 .view-pane .leaflet-container {
   width: 100%;
   height: 100%;
+}
+
+.leaflet-container.station-pick-mode,
+.leaflet-container.station-pick-mode * {
+  cursor: crosshair !important;
+}
+
+.leaflet-container.station-pick-mode {
+  box-shadow: inset 0 0 0 2px var(--accent-soft);
 }
 
 #threeContainer {
@@ -700,6 +826,42 @@ input[type="range"] {
   font-family: var(--font-family);
 }
 
+.weather-legend {
+  pointer-events: auto;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 0.6rem 0.8rem;
+  min-width: 180px;
+  font-size: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.weather-legend__title {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.weather-legend__gradient {
+  height: 14px;
+  border-radius: 6px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.weather-legend__scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* 6. Timeline fija sin generar scroll */
 .timeline {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -709,6 +871,9 @@ input[type="range"] {
   display: flex;
   flex-direction: column;
   gap: 0.8rem;
+  flex-shrink: 0; /* Que no empuje al resto a scrollear */
+  overflow: visible; /* Sin scroll interno innecesario */
+  /* */
 }
 
 .timeline-header {
@@ -790,6 +955,44 @@ input[type="range"] {
   font-size: 1.1rem;
 }
 
+.station-dialog[open] {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border: none;
+  padding: 0;
+  background: transparent;
+  margin: 0;
+  z-index: 1000;
+}
+
+.station-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.12);
+  pointer-events: none;
+}
+
+.station-dialog.is-dragging .dialog-content {
+  cursor: move;
+  user-select: none;
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.dialog-header h2 {
+  margin: 0;
+}
+
+.dialog-drag-handle {
+  cursor: move;
+  user-select: none;
+}
+
 .dialog-content label {
   display: flex;
   flex-direction: column;
@@ -804,15 +1007,114 @@ input[type="range"] {
   padding: 0;
 }
 
-.mini-chart {
-  min-height: 140px;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-sm);
+.metric-graph-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.metric-graph-list li {
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  font-size: 0.85rem;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 0.8rem 1rem;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+}
+
+.metric-graph-list span {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.btn-show-graph {
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.btn-show-graph:hover {
+  background: rgba(79, 70, 229, 0.2);
+}
+
+/* 7. Modal centrado sin scroll global */
+#graphModal {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 1.2rem 1.4rem 1.6rem;
+  width: min(860px, 92vw);
+  max-height: 90vh;
+  background: var(--surface);
+  color: var(--text);
+  overflow: hidden; /* El modal controla su propio scroll */
+  /* */
+}
+
+#graphModal[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+#graphModal::backdrop {
+  background: rgba(15, 23, 42, 0.35);
+}
+
+#graphModalTitle {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+/* 8. El contenedor del chart cuida el espacio */
+.modal-chart-container {
+  flex: 1;
+  min-height: 360px;
+  max-height: 65vh;
+  display: flex;
+  overflow: hidden; /* El canvas no provoca scroll */
+  /* */
+}
+
+.modal-chart-container canvas {
+  width: 100% !important;
+  height: 100% !important;
+  flex: 1;
+}
+
+#closeGraphModal {
+  align-self: flex-end;
+  padding: 0.45rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  font-weight: 600;
+}
+
+#closeGraphModal:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .metric-graph-list li {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .metric-graph-list .btn-show-graph {
+    width: 100%;
+    text-align: center;
+  }
 }
 
 @media (max-width: 1200px) {
@@ -839,6 +1141,7 @@ input[type="range"] {
 
   .workspace {
     flex-direction: column;
+    height: 100%;
   }
 
   .control-panel {
@@ -847,8 +1150,21 @@ input[type="range"] {
     border-bottom: 1px solid var(--border);
   }
 
+  #controlPanel {
+    height: auto;
+    max-height: 55vh;
+  }
+
   .control-panel[data-collapsed="true"] {
     transform: translateY(-100%);
+  }
+
+  .visual-area {
+    height: auto;
+  }
+
+  #viewGrid {
+    height: auto;
   }
 
   .panel-reveal {

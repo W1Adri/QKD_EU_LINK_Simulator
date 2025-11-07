@@ -3,7 +3,7 @@ import { createEarthTextures, disposeEarthTextures } from './earthTexture.js';
 
 const { EARTH_RADIUS_KM, EARTH_ROT_RATE } = orbitConstants;
 const UNIT_SCALE = 1 / EARTH_RADIUS_KM;
-const EARTH_BASE_ROTATION = -Math.PI / 2;
+const EARTH_BASE_ROTATION = 0;
 const GROUND_TRACK_ALTITUDE_KM = 0.05;
 
 const EARTH_VERTEX_SHADER = `
@@ -34,7 +34,7 @@ const EARTH_FRAGMENT_SHADER = `
     vec3 normal = normalize(vNormal);
     vec3 lightDir = normalize(sunDirection);
     float diffuse = max(dot(normal, lightDir), 0.0);
-    vec2 sampleUv = vec2(1.0 - vUv.x, vUv.y);
+    vec2 sampleUv = vUv;
     vec3 dayColor = texture2D(dayMap, sampleUv).rgb;
     vec3 nightColor = texture2D(nightMap, sampleUv).rgb;
 
@@ -93,7 +93,7 @@ async function ensureThree() {
       OrbitControls =
         controlsModule.OrbitControls ?? controlsModule.default ?? controlsModule;
       if (typeof OrbitControls !== 'function') {
-        throw new Error('OrbitControls no está disponible.');
+        throw new Error('OrbitControls is not available.');
       }
     });
   }
@@ -113,7 +113,7 @@ function hideFallback() {
 
 function showFallback(message) {
   if (fallbackEl) {
-    fallbackEl.textContent = message || 'No se pudo inicializar la escena 3D.';
+    fallbackEl.textContent = message || '3D scene could not be initialized.';
     fallbackEl.hidden = false;
     fallbackEl.setAttribute('aria-hidden', 'false');
   }
@@ -146,7 +146,7 @@ function buildRenderer() {
   canvasEl.addEventListener('webglcontextlost', (event) => {
     event.preventDefault();
     cancelAnimation();
-    showFallback('Se perdió el contexto WebGL. Recarga para reintentar.');
+    showFallback('The WebGL context was lost. Reload to try again.');
     isReady = false;
   });
 }
@@ -360,12 +360,9 @@ function updateEarthRotation() {
   }
 }
 
-export function setEarthRotationFromTime(seconds) {
-  if (!Number.isFinite(seconds)) return;
-  earthSimulationRotation = (seconds * EARTH_ROT_RATE) % (Math.PI * 2);
-  if (earthSimulationRotation < 0) {
-    earthSimulationRotation += Math.PI * 2;
-  }
+export function setEarthRotationFromTime(gmstAngle) {
+  if (!Number.isFinite(gmstAngle)) return;
+  earthSimulationRotation = gmstAngle;
   updateEarthRotation();
 }
 
@@ -483,8 +480,8 @@ export async function initScene(container) {
   fallbackEl = container?.querySelector('#threeFallback');
 
   if (!containerEl || !canvasEl) {
-    console.error('No se encontró el contenedor o el canvas para el modo 3D.');
-    showFallback('Falta el lienzo 3D en la interfaz.');
+    console.error('3D mode container or canvas element not found.');
+    showFallback('Missing 3D canvas in the interface.');
     return;
   }
 
@@ -516,8 +513,8 @@ export async function initScene(container) {
     startAnimation();
     isReady = true;
   } catch (error) {
-    console.error('Error inicializando la vista 3D', error);
-    showFallback(error?.message || 'No se pudo inicializar la vista 3D.');
+    console.error('Error initializing the 3D view', error);
+    showFallback(error?.message || 'Unable to initialize the 3D view.');
   }
 }
 
