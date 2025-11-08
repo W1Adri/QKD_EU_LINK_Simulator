@@ -20,6 +20,7 @@ from datetime import datetime
 from functools import lru_cache
 from math import ceil, inf, isfinite, sqrt
 from pathlib import Path
+from textwrap import dedent
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 from uuid import uuid4
 
@@ -1003,6 +1004,355 @@ def _normalize_username(value: str) -> str:
     return value.strip().lower()
 
 
+VARIANT_PAGES: Dict[str, str] = {
+        "dashboard": dedent(
+                """\
+                <!DOCTYPE html>
+                <html lang="es">
+                <head>
+                    <meta charset="utf-8" />
+                    <meta name="viewport" content="width=device-width, initial-scale=1" />
+                    <title>QKD Orbit Designer · Versión Panel</title>
+                    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+                    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+                    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+                    <link rel="stylesheet" href="/static/styles/app.css" />
+                    <script type="importmap">
+                        {
+                            "imports": {
+                                "three": "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js",
+                                "three/examples/": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/"
+                            }
+                        }
+                    </script>
+                </head>
+                <body data-variant="dashboard">
+                    <div class="app-shell">
+                        <header class="app-header">
+                            <div class="brand">
+                                <h1>QKD Orbit Designer</h1>
+                                <p class="subtitle">Versión panel · Layout analítico</p>
+                            </div>
+                            <nav class="variant-picker" aria-label="Cambiar de versión">
+                                <a href="/">Compacta</a>
+                                <a href="/layouts/dashboard" class="is-active">Panel</a>
+                                <a href="/layouts/immersive">Inmersiva</a>
+                            </nav>
+                            <div class="header-actions">
+                                <button id="btnTogglePanels" class="ghost" type="button">Ocultar paneles</button>
+                                <button id="btnTheme" class="ghost" type="button" aria-pressed="false">Modo oscuro</button>
+                            </div>
+                        </header>
+
+                        <main class="workspace">
+                            <section class="visual-area">
+                                <div class="view-grid" data-view-container>
+                                    <div id="threeContainer" class="view-pane view-3d" aria-label="Globo 3D"></div>
+                                    <div id="mapContainer" class="view-pane view-2d" aria-label="Mapa 2D"></div>
+                                    <div class="chart-stack">
+                                        <div class="chart-card">
+                                            <header>
+                                                <h3>Pérdidas geométricas</h3>
+                                                <span id="lossSummary">--</span>
+                                            </header>
+                                            <div id="chartLoss"></div>
+                                        </div>
+                                        <div class="chart-card">
+                                            <header>
+                                                <h3>Elevación</h3>
+                                                <span id="elevationSummary">--</span>
+                                            </header>
+                                            <div id="chartElevation"></div>
+                                        </div>
+                                        <div class="chart-card">
+                                            <header>
+                                                <h3>Distancia</h3>
+                                                <span id="distanceSummary">--</span>
+                                            </header>
+                                            <div id="chartDistance"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="timeline">
+                                    <div class="timeline-header">
+                                        <div class="timeline-actions">
+                                            <button id="btnPlay" type="button">▶</button>
+                                            <button id="btnPause" type="button">⏸</button>
+                                            <button id="btnStepBack" type="button">⏪</button>
+                                            <button id="btnStepForward" type="button">⏩</button>
+                                            <button id="btnResetTime" type="button">↺</button>
+                                        </div>
+                                        <div class="timeline-meta">
+                                            <label for="timeWarp">Velocidad</label>
+                                            <select id="timeWarp">
+                                                <option value="1">x1</option>
+                                                <option value="10">x10</option>
+                                                <option value="60" selected>x60</option>
+                                                <option value="300">x300</option>
+                                                <option value="900">x900</option>
+                                            </select>
+                                            <span class="time-readout">t=<span id="timeLabel">0 s</span></span>
+                                        </div>
+                                    </div>
+                                    <input id="timeSlider" type="range" min="0" max="1" step="1" value="0" />
+                                </div>
+                            </section>
+
+                            <aside class="control-panel drawer" data-panel="primary" data-collapsed="false">
+                                <div class="drawer-body" id="dashboard-drawer">
+                                    <nav class="drawer-menu" aria-label="Paneles de control">
+                                        <button type="button" class="drawer-menu-item is-active" data-section-target="orbit">Órbita</button>
+                                        <button type="button" class="drawer-menu-item" data-section-target="optics">Enlace óptico</button>
+                                        <button type="button" class="drawer-menu-item" data-section-target="stations">Estaciones</button>
+                                    </nav>
+                                    <div class="drawer-content">
+                                        <section class="panel-group" data-section="orbit">
+                                            <header>
+                                                <h2>Órbita</h2>
+                                                <p>Selecciona condiciones iniciales.</p>
+                                            </header>
+                                            <div class="field">
+                                                <label for="satelliteName">Nombre</label>
+                                                <input id="satelliteName" type="text" value="Sat-QKD" />
+                                            </div>
+                                            <div class="field">
+                                                <label for="epochInput">Época</label>
+                                                <input id="epochInput" type="datetime-local" />
+                                            </div>
+                                            <div class="field-columns">
+                                                <label class="field">a (km)<input id="semiMajor" type="number" min="6600" max="9000" value="6771" /></label>
+                                                <label class="field">e<input id="eccentricity" type="number" min="0" max="0.2" step="0.001" value="0.001" /></label>
+                                                <label class="field">i (°)<input id="inclination" type="number" min="0" max="180" step="0.1" value="53" /></label>
+                                                <label class="field">Ω (°)<input id="raan" type="number" min="0" max="360" step="0.1" value="0" /></label>
+                                                <label class="field">ω (°)<input id="argPerigee" type="number" min="0" max="360" step="0.1" value="0" /></label>
+                                                <label class="field">M₀ (°)<input id="meanAnomaly" type="number" min="0" max="360" step="0.1" value="0" /></label>
+                                            </div>
+                                            <label class="checkbox">
+                                                <input id="resonanceToggle" type="checkbox" />
+                                                Repetición ground-track
+                                            </label>
+                                            <div class="field-columns resonance" data-hidden>
+                                                <label class="field">Órbitas<input id="resonanceOrbits" type="number" min="1" max="30" value="1" /></label>
+                                                <label class="field">Rotaciones<input id="resonanceRotations" type="number" min="1" max="30" value="1" /></label>
+                                            </div>
+                                        </section>
+                                        <section class="panel-group" data-section="optics" hidden>
+                                            <header>
+                                                <h2>Enlace óptico</h2>
+                                            </header>
+                                            <div class="field-columns">
+                                                <label class="field">Apertura satélite (m)<input id="satAperture" type="number" min="0.1" max="3" step="0.05" value="0.6" /></label>
+                                                <label class="field">Apertura estación (m)<input id="groundAperture" type="number" min="0.1" max="5" step="0.05" value="1.0" /></label>
+                                                <label class="field">λ (nm)<input id="wavelength" type="number" min="600" max="1700" step="1" value="810" /></label>
+                                                <label class="field">Muestras/órbita<input id="samplesPerOrbit" type="number" min="60" max="720" step="10" value="180" /></label>
+                                            </div>
+                                        </section>
+                                        <section class="panel-group" data-section="stations" hidden>
+                                            <header>
+                                                <h2>Estaciones</h2>
+                                            </header>
+                                            <div class="field">
+                                                <label for="stationSelect">Estación activa</label>
+                                                <select id="stationSelect"></select>
+                                            </div>
+                                            <div class="button-row">
+                                                <button id="btnAddStation" type="button">Nueva estación</button>
+                                                <button id="btnFocusStation" type="button">Enfocar</button>
+                                            </div>
+                                            <dl class="metrics" id="stationMetrics">
+                                                <div><dt>Distancia</dt><dd id="distanceMetric">--</dd></div>
+                                                <div><dt>Elevación</dt><dd id="elevationMetric">--</dd></div>
+                                                <div><dt>Zenit</dt><dd id="zenithMetric">--</dd></div>
+                                                <div><dt>Pérdida geométrica</dt><dd id="lossMetric">--</dd></div>
+                                                <div><dt>Doppler</dt><dd id="dopplerMetric">--</dd></div>
+                                            </dl>
+                                        </section>
+                                    </div>
+                                </div>
+                                <button class="drawer-handle" type="button" data-target="primary" aria-controls="dashboard-drawer" aria-expanded="true">
+                                    <span class="icon" aria-hidden="true">◀</span>
+                                    <span class="label">Panel</span>
+                                </button>
+                            </aside>
+                        </main>
+                    </div>
+
+                    <dialog id="stationDialog">
+                        <form method="dialog" class="dialog-content">
+                            <h2>Nueva estación</h2>
+                            <label>Nombre<input id="stationName" required /></label>
+                            <label>Latitud (°)<input id="stationLat" type="number" min="-90" max="90" step="0.0001" required /></label>
+                            <label>Longitud (°)<input id="stationLon" type="number" min="-180" max="180" step="0.0001" required /></label>
+                            <label>Apertura (m)<input id="stationAperture" type="number" min="0.1" max="8" step="0.1" value="1.0" required /></label>
+                            <menu>
+                                <button value="cancel">Cancelar</button>
+                                <button id="stationSave" value="default">Guardar</button>
+                            </menu>
+                        </form>
+                    </dialog>
+
+                    <template id="stationOptionTemplate">
+                        <option></option>
+                    </template>
+
+                    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+                    <script type="module" src="/static/app.js"></script>
+                </body>
+                </html>
+                """
+        ),
+        "immersive": dedent(
+                """\
+                <!DOCTYPE html>
+                <html lang="es">
+                <head>
+                    <meta charset="utf-8" />
+                    <meta name="viewport" content="width=device-width, initial-scale=1" />
+                    <title>QKD Orbit Designer · Versión Inmersiva</title>
+                    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+                    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+                    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+                    <link rel="stylesheet" href="/static/styles/app.css" />
+                    <script type="importmap">
+                        {
+                            "imports": {
+                                "three": "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js",
+                                "three/examples/": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/"
+                            }
+                        }
+                    </script>
+                </head>
+                <body data-variant="immersive">
+                    <div class="app-shell">
+                        <header class="app-header">
+                            <div class="brand">
+                                <h1>QKD Orbit Designer</h1>
+                                <p class="subtitle">Versión inmersiva · Control flotante</p>
+                            </div>
+                            <nav class="variant-picker" aria-label="Cambiar de versión">
+                                <a href="/">Compacta</a>
+                                <a href="/layouts/dashboard">Panel</a>
+                                <a href="/layouts/immersive" class="is-active">Inmersiva</a>
+                            </nav>
+                            <div class="header-actions">
+                                <button id="btnTheme" class="ghost" type="button" aria-pressed="false">Modo oscuro</button>
+                            </div>
+                        </header>
+
+                        <main class="workspace">
+                            <div class="immersive-stage">
+                                <div id="threeContainer" class="immersive-3d" aria-label="Globo 3D"></div>
+                                <div id="mapContainer" class="immersive-map" aria-label="Mapa 2D"></div>
+                                <div class="immersive-overlay">
+                                    <section class="floating-card" id="cardOrbit">
+                                        <header>
+                                            <h2>Órbita</h2>
+                                            <button class="ghost" data-collapse="cardOrbit">−</button>
+                                        </header>
+                                        <div class="card-body">
+                                            <label>Nombre<input id="satelliteName" type="text" value="Sat-QKD" /></label>
+                                            <label>Época<input id="epochInput" type="datetime-local" /></label>
+                                            <label>a (km)<input id="semiMajor" type="number" min="6600" max="9000" value="6771" /></label>
+                                            <label>e<input id="eccentricity" type="number" min="0" max="0.2" step="0.001" value="0.001" /></label>
+                                            <label>i (°)<input id="inclination" type="number" min="0" max="180" step="0.1" value="53" /></label>
+                                            <label>Ω (°)<input id="raan" type="number" min="0" max="360" step="0.1" value="0" /></label>
+                                            <label>ω (°)<input id="argPerigee" type="number" min="0" max="360" step="0.1" value="0" /></label>
+                                            <label>M₀ (°)<input id="meanAnomaly" type="number" min="0" max="360" step="0.1" value="0" /></label>
+                                            <label class="checkbox">
+                                                <input id="resonanceToggle" type="checkbox" />
+                                                Ground-track resonante
+                                            </label>
+                                            <div class="dual" data-hidden>
+                                                <label>Órbitas<input id="resonanceOrbits" type="number" min="1" max="30" value="1" /></label>
+                                                <label>Rotaciones<input id="resonanceRotations" type="number" min="1" max="30" value="1" /></label>
+                                            </div>
+                                        </div>
+                                    </section>
+
+                                    <section class="floating-card" id="cardLink">
+                                        <header>
+                                            <h2>Enlace óptico</h2>
+                                            <button class="ghost" data-collapse="cardLink">−</button>
+                                        </header>
+                                        <div class="card-body">
+                                            <label>Apertura satélite (m)<input id="satAperture" type="number" min="0.1" max="3" step="0.05" value="0.6" /></label>
+                                            <label>Apertura estación (m)<input id="groundAperture" type="number" min="0.1" max="5" step="0.05" value="1.0" /></label>
+                                            <label>λ (nm)<input id="wavelength" type="number" min="600" max="1700" step="1" value="810" /></label>
+                                            <label>Muestras/órbita<input id="samplesPerOrbit" type="number" min="60" max="720" step="10" value="180" /></label>
+                                            <label class="range">Tiempo<input id="timeSlider" type="range" min="0" max="1" step="1" value="0" /></label>
+                                            <div class="timeline-buttons">
+                                                <button id="btnPlay" type="button">▶</button>
+                                                <button id="btnPause" type="button">⏸</button>
+                                                <button id="btnStepBack" type="button">⏪</button>
+                                                <button id="btnStepForward" type="button">⏩</button>
+                                                <button id="btnResetTime" type="button">↺</button>
+                                            </div>
+                                            <label>Velocidad<select id="timeWarp">
+                                                <option value="1">x1</option>
+                                                <option value="10">x10</option>
+                                                <option value="60" selected>x60</option>
+                                                <option value="300">x300</option>
+                                                <option value="900">x900</option>
+                                            </select></label>
+                                            <div class="readout">t=<span id="timeLabel">0 s</span> · Elevación=<span id="elevationLabel">--</span> · Pérdida=<span id="lossLabel">--</span></div>
+                                        </div>
+                                    </section>
+
+                                    <section class="floating-card" id="cardStations">
+                                        <header>
+                                            <h2>Estaciones</h2>
+                                            <button class="ghost" data-collapse="cardStations">−</button>
+                                        </header>
+                                        <div class="card-body">
+                                            <label>Activa<select id="stationSelect"></select></label>
+                                            <div class="button-row">
+                                                <button id="btnAddStation" type="button">Añadir</button>
+                                                <button id="btnFocusStation" type="button">Enfocar</button>
+                                            </div>
+                                            <dl class="metrics" id="stationMetrics">
+                                                <div><dt>Distancia</dt><dd id="distanceMetric">--</dd></div>
+                                                <div><dt>Elevación</dt><dd id="elevationMetric">--</dd></div>
+                                                <div><dt>Zenit</dt><dd id="zenithMetric">--</dd></div>
+                                                <div><dt>Pérdida geométrica</dt><dd id="lossMetric">--</dd></div>
+                                                <div><dt>Doppler</dt><dd id="dopplerMetric">--</dd></div>
+                                            </dl>
+                                            <div class="mini-chart" id="chartLoss"></div>
+                                            <div class="mini-chart" id="chartElevation"></div>
+                                            <div class="mini-chart" id="chartDistance"></div>
+                                        </div>
+                                    </section>
+                                </div>
+                            </div>
+                        </main>
+                    </div>
+
+                    <dialog id="stationDialog">
+                        <form method="dialog" class="dialog-content">
+                            <h2>Nueva estación</h2>
+                            <label>Nombre<input id="stationName" required /></label>
+                            <label>Latitud (°)<input id="stationLat" type="number" min="-90" max="90" step="0.0001" required /></label>
+                            <label>Longitud (°)<input id="stationLon" type="number" min="-180" max="180" step="0.0001" required /></label>
+                            <label>Apertura (m)<input id="stationAperture" type="number" min="0.1" max="8" step="0.1" value="1.0" required /></label>
+                            <menu>
+                                <button value="cancel">Cancelar</button>
+                                <button id="stationSave" value="default">Guardar</button>
+                            </menu>
+                        </form>
+                    </dialog>
+
+                    <template id="stationOptionTemplate">
+                        <option></option>
+                    </template>
+
+                    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+                    <script type="module" src="/static/app.js"></script>
+                </body>
+                </html>
+                """
+        ),
+}
+
+
 class QKDApplication:
     """Composes the FastAPI app and exposes the service facade."""
 
@@ -1011,6 +1361,7 @@ class QKDApplication:
         self.ogs_store = OGSStore(DATA_PATH)
         self.atmosphere = AtmosphereService()
         self.weather = WeatherFieldService()
+        self.variant_pages = VARIANT_PAGES
 
         self.app = FastAPI(title="QKD Europe Planner", version="0.2.0")
         self.app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -1022,6 +1373,7 @@ class QKDApplication:
 
     def _configure_routes(self) -> None:
         app = self.app
+        variant_pages = self.variant_pages
 
         @app.on_event("startup")
         async def _startup() -> None:
@@ -1042,6 +1394,20 @@ class QKDApplication:
             if not INDEX_HTML.exists():
                 return HTMLResponse("index.html not found", status_code=404)
             return FileResponse(str(INDEX_HTML))
+
+        @app.get("/layouts/{variant}", response_class=HTMLResponse)
+        async def layout_page(variant: str):
+            template = variant_pages.get(variant.lower())
+            if template is None:
+                raise HTTPException(status_code=404, detail="Layout no disponible.")
+            return HTMLResponse(template)
+
+        @app.get("/static/version-{variant}.html", include_in_schema=False)
+        async def legacy_layout(variant: str):
+            template = variant_pages.get(variant.lower())
+            if template is None:
+                raise HTTPException(status_code=404, detail="Layout no disponible.")
+            return HTMLResponse(template)
 
         @app.get("/orbit3d", response_class=HTMLResponse)
         async def orbit3d():
