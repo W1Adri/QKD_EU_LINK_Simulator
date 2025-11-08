@@ -126,6 +126,734 @@ button {
   transition: opacity var(--transition), transform var(--transition);
 }
 
+/* ------------------------------------------------------------------
+   Variant layout shared styles
+------------------------------------------------------------------ */
+
+body[data-variant] {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+}
+
+body[data-variant] .app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100%;
+}
+
+body[data-variant] .app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1.1rem 1.8rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 14px 35px rgba(15, 23, 42, 0.08);
+  position: relative;
+  z-index: 20;
+}
+
+body[data-variant] .brand {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+body[data-variant] .brand h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+body[data-variant] .brand .subtitle {
+  margin: 0.15rem 0 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+body[data-variant] .variant-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  background: var(--surface-alt);
+  padding: 0.4rem 0.65rem;
+  border-radius: 999px;
+}
+
+body[data-variant] .variant-picker a {
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  transition: background var(--transition), color var(--transition);
+}
+
+body[data-variant] .variant-picker a.is-active,
+body[data-variant] .variant-picker a:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+body[data-variant] .header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+body[data-variant] .workspace {
+  flex: 1;
+  display: grid;
+  min-height: 0;
+  background: transparent;
+}
+
+body[data-variant] .drawer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  transition: width var(--transition), min-width var(--transition), max-width var(--transition), opacity var(--transition);
+}
+
+body[data-variant] .drawer-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.2rem 1.35rem 1.4rem;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+body[data-variant] .drawer-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+body[data-variant] .drawer-body::-webkit-scrollbar-thumb {
+  background: var(--accent-soft);
+  border-radius: 999px;
+}
+
+body[data-variant] .drawer-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+body[data-variant] button.drawer-menu-item {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  box-shadow: none;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.85rem;
+  border-radius: 999px;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+body[data-variant] button.drawer-menu-item:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+body[data-variant] button.drawer-menu-item.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+body[data-variant] .drawer-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  flex: 1;
+}
+
+body[data-variant] .drawer-content > [data-section] {
+  display: none;
+}
+
+body[data-variant] .drawer-content > [data-section].is-active {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+body[data-variant] .drawer[data-collapsed="true"] {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  min-width: 56px;
+  max-width: 56px;
+  padding: 0;
+}
+
+body[data-variant] .drawer[data-collapsed="true"] .drawer-body {
+  display: none;
+}
+
+body[data-variant] .drawer-handle {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.85rem 0.6rem;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  writing-mode: vertical-rl;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  box-shadow: var(--shadow);
+}
+
+body[data-variant] .drawer-handle .icon {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+body[data-variant] .drawer[data-panel="primary"] .drawer-handle {
+  right: -20px;
+}
+
+body[data-variant] .drawer[data-panel="secondary"] .drawer-handle {
+  left: -20px;
+}
+
+body[data-variant] .drawer[data-panel="primary"][data-collapsed="true"] .drawer-handle {
+  right: 8px;
+}
+
+body[data-variant] .drawer[data-panel="secondary"][data-collapsed="true"] .drawer-handle {
+  left: 8px;
+}
+
+body[data-variant] .control-panel,
+body[data-variant] .insight-panel,
+body[data-variant] .panel-group,
+body[data-variant] .floating-card {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+body[data-variant] .panel-group {
+  padding: 1.2rem 1.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+body[data-variant] .panel-group header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+body[data-variant] .panel-group header p {
+  margin: 0.2rem 0 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+body[data-variant] .field,
+body[data-variant] label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+body[data-variant] .field-group {
+  display: grid;
+  gap: 0.8rem;
+}
+
+body[data-variant] .field-columns {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+body[data-variant] .checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+body[data-variant] .checkbox input {
+  width: auto;
+}
+
+body[data-variant] input,
+body[data-variant] select,
+body[data-variant] textarea {
+  font-family: inherit;
+  font-size: 0.95rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-alt);
+  color: var(--text);
+  transition: border var(--transition), box-shadow var(--transition);
+}
+
+body[data-variant] input:focus,
+body[data-variant] select:focus,
+body[data-variant] textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+body[data-variant] input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-alt);
+}
+
+body[data-variant] input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #fff;
+  box-shadow: 0 6px 12px rgba(79, 70, 229, 0.35);
+  cursor: pointer;
+}
+
+body[data-variant] input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #fff;
+  box-shadow: 0 6px 12px rgba(79, 70, 229, 0.35);
+  cursor: pointer;
+}
+
+body[data-variant] .button-row {
+  display: flex;
+  gap: 0.6rem;
+}
+
+body[data-variant] .metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.6rem 0.9rem;
+}
+
+body[data-variant] .metrics dt {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+body[data-variant] .metrics dd {
+  margin: 0.2rem 0 0;
+  font-weight: 600;
+}
+
+body[data-variant] .view-grid {
+  display: grid;
+  grid-auto-flow: row;
+  gap: 1rem;
+}
+
+body[data-variant] .view-pane,
+body[data-variant] .chart-card,
+body[data-variant] .timeline {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+body[data-variant] .view-pane {
+  position: relative;
+  overflow: hidden;
+}
+
+body[data-variant] .chart-card {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+body[data-variant] .chart-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+body[data-variant] .chart-card header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+body[data-variant] .chart-card header span {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+body[data-variant] .timeline {
+  padding: 1rem 1.25rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+body[data-variant] .timeline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+body[data-variant] .timeline-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+body[data-variant] .timeline-actions button {
+  padding: 0.35rem 0.55rem;
+  border-radius: 999px;
+}
+
+body[data-variant] .timeline-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+body[data-variant] .timeline input[type="range"] {
+  width: 100%;
+}
+
+body[data-variant] dialog {
+  border: none;
+  border-radius: var(--radius-lg);
+  padding: 0;
+  background: transparent;
+}
+
+body[data-variant] dialog::backdrop {
+  background: rgba(15, 23, 42, 0.35);
+}
+
+body[data-variant] .dialog-content {
+  padding: 1.6rem;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  display: grid;
+  gap: 0.85rem;
+  min-width: 320px;
+}
+
+body[data-variant] .dialog-content h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+body[data-variant] .dialog-content menu {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+}
+
+body[data-variant] .mini-chart {
+  min-height: 140px;
+}
+
+body[data-variant] .floating-card {
+  padding: 1rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  backdrop-filter: blur(18px);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+body[data-variant] .floating-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+body[data-variant] .floating-card .card-body {
+  display: grid;
+  gap: 0.75rem;
+}
+
+body[data-variant] .floating-card .dual {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+body[data-variant] .floating-card .dual[data-hidden] {
+  display: none;
+}
+
+body[data-variant] .timeline-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+/* ------------------------------------------------------------------
+   Variant layout: compact/dashboard/immersive overrides
+------------------------------------------------------------------ */
+
+body[data-variant="compact"] .workspace {
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) minmax(480px, 1fr) minmax(260px, 320px);
+  gap: 1.5rem;
+  padding: 1.5rem 2rem;
+}
+
+body[data-variant="compact"] .workspace.is-primary-collapsed {
+  grid-template-columns: minmax(56px, 72px) minmax(480px, 1fr) minmax(260px, 320px);
+}
+
+body[data-variant="compact"] .workspace.is-secondary-collapsed {
+  grid-template-columns: minmax(300px, 360px) minmax(480px, 1fr) minmax(56px, 72px);
+}
+
+body[data-variant="compact"] .workspace.is-primary-collapsed.is-secondary-collapsed {
+  grid-template-columns: minmax(56px, 72px) minmax(480px, 1fr) minmax(56px, 72px);
+}
+
+body[data-variant="compact"] .control-panel,
+body[data-variant="compact"] .insight-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+body[data-variant="compact"] .visual-area {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+body[data-variant="compact"] .view-grid {
+  flex: 1;
+  min-height: 0;
+}
+
+body[data-variant="compact"] .timeline {
+  margin-top: auto;
+}
+
+body[data-variant="compact"] .insight-panel .drawer-body {
+  max-height: calc(100vh - 220px);
+}
+
+body[data-variant="compact"] .view-toolbar {
+  position: absolute;
+  top: 0.75rem;
+}
+
+@media (max-width: 1280px) {
+  body[data-variant="compact"] .workspace {
+    grid-template-columns: minmax(280px, 340px) 1fr;
+    grid-template-areas:
+      "controls visuals"
+      "insights visuals";
+  }
+
+  body[data-variant="compact"] .control-panel {
+    grid-area: controls;
+  }
+
+  body[data-variant="compact"] .visual-area {
+    grid-area: visuals;
+  }
+
+  body[data-variant="compact"] .insight-panel {
+    grid-area: insights;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  body[data-variant="compact"] .insight-panel .drawer-body {
+    max-height: none;
+  }
+}
+
+@media (max-width: 960px) {
+  body[data-variant="compact"] .workspace {
+    grid-template-columns: 1fr;
+    padding: 1.2rem;
+  }
+
+  body[data-variant="compact"] .control-panel,
+  body[data-variant="compact"] .insight-panel {
+    position: relative;
+    max-height: none;
+  }
+
+  body[data-variant="compact"] .view-toolbar {
+    left: 50%;
+    transform: translate(-50%, 0);
+  }
+}
+
+body[data-variant="dashboard"] .workspace {
+  display: grid;
+  grid-template-columns: minmax(500px, 1.35fr) minmax(320px, 0.75fr);
+  gap: 1.5rem;
+  padding: 1.5rem 2rem;
+}
+
+body[data-variant="dashboard"] .workspace.is-primary-collapsed {
+  grid-template-columns: minmax(70px, 0.25fr) minmax(500px, 1fr);
+}
+
+body[data-variant="dashboard"] .visual-area {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  position: relative;
+}
+
+body[data-variant="dashboard"] .view-grid {
+  display: grid;
+  grid-template-columns: minmax(380px, 0.8fr) minmax(320px, 0.6fr) minmax(240px, 0.4fr);
+  grid-template-rows: minmax(420px, 1fr);
+  gap: 1rem;
+}
+
+body[data-variant="dashboard"] .chart-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+body[data-variant="dashboard"] .control-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+body[data-variant="dashboard"] .control-panel .drawer-body {
+  max-height: calc(100vh - 220px);
+}
+
+body[data-variant="dashboard"] .timeline {
+  margin-top: auto;
+}
+
+@media (max-width: 1400px) {
+  body[data-variant="dashboard"] .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  body[data-variant="dashboard"] .view-grid {
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    grid-auto-rows: minmax(360px, auto);
+  }
+
+  body[data-variant="dashboard"] .control-panel .drawer-body {
+    max-height: none;
+  }
+}
+
+@media (max-width: 920px) {
+  body[data-variant="dashboard"] .workspace {
+    padding: 1.2rem;
+  }
+}
+
+body[data-variant="immersive"] .workspace {
+  flex: 1;
+  display: flex;
+  padding: 0;
+  position: relative;
+}
+
+body[data-variant="immersive"] .immersive-stage {
+  position: relative;
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  overflow: hidden;
+}
+
+body[data-variant="immersive"] .immersive-3d,
+body[data-variant="immersive"] .immersive-map {
+  position: absolute;
+  inset: 0;
+  transition: opacity 280ms ease, transform 280ms ease;
+}
+
+body[data-variant="immersive"] .immersive-map {
+  mix-blend-mode: lighten;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+body[data-variant="immersive"] .immersive-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 320px));
+  gap: 1.1rem;
+  padding: 1.5rem;
+  align-content: flex-start;
+}
+
+body[data-variant="immersive"] .floating-card {
+  pointer-events: auto;
+}
+
+body[data-variant="immersive"] .timeline-buttons button {
+  padding: 0.35rem 0.65rem;
+}
+
+body[data-variant="immersive"] .mini-chart {
+  min-height: 120px;
+}
+
+@media (max-width: 980px) {
+  body[data-variant="immersive"] .immersive-overlay {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    padding: 1.2rem;
+  }
+}
+
+@media (max-width: 720px) {
+  body[data-variant="immersive"] .immersive-overlay {
+    grid-template-columns: 1fr;
+    gap: 0.9rem;
+  }
+}
+
 .info-tooltip[data-visible="true"] {
   opacity: 1;
   transform: translateY(0);
