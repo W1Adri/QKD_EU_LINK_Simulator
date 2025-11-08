@@ -2,9 +2,9 @@
 
 import uvicorn  # importamos el servidor ASGI que correrá FastAPI
 
-def main():  # Función principal: prepara y arranca Uvicorn con la app de FastAPI ubicada en "app.main:app" en 127.0.0.1:8000 con recarga.
+def main():  # Función principal: prepara y arranca Uvicorn con la app de FastAPI ubicada en "app.backend:app" en 127.0.0.1:8000 con recarga.
     uvicorn.run(  # invoca el servidor
-        "app.main:app",  # ruta "modulo:objeto" de la app FastAPI
+        "app.backend:app",  # ruta "modulo:objeto" de la app FastAPI
         host="127.0.0.1",  # escucha solo en local
         port=8000,  # puerto HTTP
         reload=True  # recarga automática al guardar
