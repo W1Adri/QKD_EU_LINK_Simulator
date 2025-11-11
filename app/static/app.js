@@ -113,6 +113,35 @@
   define('state', (exports, module) => {
     const { isoNowLocal } = require('utils');
 
+    const CONSTELLATION_GROUPS = [
+      { id: 'starlink', label: 'Starlink', color: '#38bdf8' },
+      { id: 'oneweb', label: 'OneWeb', color: '#f97316' },
+      { id: 'gps', label: 'GPS', color: '#a855f7' },
+      { id: 'galileo', label: 'Galileo', color: '#22c55e' },
+      { id: 'glonass', label: 'GLONASS', color: '#ef4444' },
+    ];
+
+    function createDefaultConstellationState() {
+      const registry = CONSTELLATION_GROUPS.reduce((acc, item) => {
+        acc[item.id] = {
+          id: item.id,
+          label: item.label,
+          color: item.color,
+          enabled: false,
+          loading: false,
+          error: null,
+          hasData: false,
+          count: 0,
+          fetchedAt: null,
+        };
+        return acc;
+      }, {});
+      return {
+        registry,
+        order: CONSTELLATION_GROUPS.map((item) => item.id),
+      };
+    }
+
     const listeners = new Set();
 
     const defaultState = {
@@ -166,11 +195,13 @@
         list: [],
         selectedId: null,
       },
+      constellations: createDefaultConstellationState(),
       computed: {
         semiMajor: null,
         orbitPeriod: null,
         dataPoints: [],
         groundTrack: [],
+        constellationPositions: {},
         metrics: {
           distanceKm: [],
           elevationDeg: [],
@@ -211,7 +242,7 @@
       },
     };
 
-    const state = structuredClone(defaultState);
+  const state = structuredClone(defaultState);
 
     function subscribe(listener, invokeImmediately = true) {
       if (typeof listener !== 'function') return () => {};
@@ -335,7 +366,73 @@
       });
     }
 
-    module.exports = { state, subscribe, mutate, resetComputed, setTheme, setVariant, ensureStationSelected, upsertStation, removeStations, removeStation, selectStation, setTimeline, setComputed, togglePlay, setTimeIndex, setTimeWarp };
+    function withConstellationGroup(groupId, updater) {
+      if (!groupId || typeof updater !== 'function') return;
+      mutate((draft) => {
+        const registry = draft.constellations?.registry;
+        if (!registry || !registry[groupId]) return;
+        updater(registry[groupId]);
+      });
+    }
+
+    function setConstellationEnabled(groupId, enabled) {
+      withConstellationGroup(groupId, (group) => {
+        group.enabled = Boolean(enabled);
+      });
+    }
+
+    function setConstellationLoading(groupId, loading) {
+      withConstellationGroup(groupId, (group) => {
+        group.loading = Boolean(loading);
+        if (loading) {
+          group.error = null;
+        }
+      });
+    }
+
+    function setConstellationMetadata(groupId, metadata = {}) {
+      withConstellationGroup(groupId, (group) => {
+        if (Object.prototype.hasOwnProperty.call(metadata, 'hasData')) {
+          group.hasData = Boolean(metadata.hasData);
+        }
+        if (Object.prototype.hasOwnProperty.call(metadata, 'count')) {
+          group.count = Number(metadata.count) || 0;
+        }
+        if (Object.prototype.hasOwnProperty.call(metadata, 'fetchedAt')) {
+          group.fetchedAt = metadata.fetchedAt ?? null;
+        }
+      });
+    }
+
+    function setConstellationError(groupId, message) {
+      withConstellationGroup(groupId, (group) => {
+        group.error = message || null;
+      });
+    }
+
+    module.exports = {
+      state,
+      subscribe,
+      mutate,
+      resetComputed,
+      setTheme,
+      setVariant,
+      ensureStationSelected,
+      upsertStation,
+      removeStations,
+      removeStation,
+      selectStation,
+      setTimeline,
+      setComputed,
+      togglePlay,
+      setTimeIndex,
+      setTimeWarp,
+      CONSTELLATION_GROUPS,
+      setConstellationEnabled,
+      setConstellationLoading,
+      setConstellationMetadata,
+      setConstellationError,
+    };
 
   });
   define('orbit', (exports, module) => {
@@ -1815,6 +1912,8 @@
     let footprintLayer;
     let linkLayer;
     const stationMarkers = new Map();
+  const constellationLayers = new Map();
+  const constellationMarkers = new Map();
     let baseLayers;
     let currentBase = 'standard';
     const ORBIT_FIT_PADDING = [48, 48];
@@ -2293,7 +2392,96 @@
       removeStationPickerMarker();
     }
 
-    module.exports = { initMap, setBaseLayer, toggleBaseLayer, invalidateSize, updateGroundTrack, updateSatellitePosition, updateLinkLine, renderStations, focusOnStation, flyToOrbit, updateFootprint, annotateStationTooltip, clearWeatherField, renderWeatherField, startStationPicker, stopStationPicker };
+    function ensureConstellationLayer(groupId) {
+      if (!map) return null;
+      let layer = constellationLayers.get(groupId);
+      if (!layer) {
+        layer = L.layerGroup();
+        constellationLayers.set(groupId, layer);
+      }
+      if (!map.hasLayer(layer)) {
+        layer.addTo(map);
+      }
+      return layer;
+    }
+
+    function renderConstellations(groupId, satellites, options = {}) {
+      if (!map) return;
+      if (!Array.isArray(satellites) || satellites.length === 0) {
+        clearConstellationGroup(groupId);
+        return;
+      }
+      const layer = ensureConstellationLayer(groupId);
+      if (!layer) return;
+      const color = options.color || '#38bdf8';
+      let markerMap = constellationMarkers.get(groupId);
+      if (!markerMap) {
+        markerMap = new Map();
+        constellationMarkers.set(groupId, markerMap);
+      }
+      const seen = new Set();
+      satellites.forEach((satellite, idx) => {
+        if (!Number.isFinite(satellite?.lat) || !Number.isFinite(satellite?.lon)) return;
+        const key = satellite.id || satellite.name || `${groupId}-${idx}`;
+        seen.add(key);
+        let marker = markerMap.get(key);
+        if (!marker) {
+          marker = L.circleMarker([satellite.lat, satellite.lon], {
+            radius: 3.2,
+            weight: 1,
+            color,
+            opacity: 0.85,
+            fillColor: color,
+            fillOpacity: 0.85,
+          });
+          if (satellite?.name) {
+            marker.bindTooltip(satellite.name, { sticky: false });
+          }
+          marker.addTo(layer);
+          markerMap.set(key, marker);
+        } else {
+          marker.setLatLng([satellite.lat, satellite.lon]);
+        }
+        marker.setStyle({ color, fillColor: color });
+      });
+      markerMap.forEach((marker, key) => {
+        if (!seen.has(key)) {
+          layer.removeLayer(marker);
+          markerMap.delete(key);
+        }
+      });
+    }
+
+    function clearConstellationGroup(groupId) {
+      const layer = constellationLayers.get(groupId);
+      if (layer && map) {
+        layer.clearLayers();
+        map.removeLayer(layer);
+      }
+      constellationLayers.delete(groupId);
+      constellationMarkers.delete(groupId);
+    }
+
+    module.exports = {
+      initMap,
+      setBaseLayer,
+      toggleBaseLayer,
+      invalidateSize,
+      updateGroundTrack,
+      updateSatellitePosition,
+      updateLinkLine,
+      renderStations,
+      focusOnStation,
+      flyToOrbit,
+      updateFootprint,
+      annotateStationTooltip,
+      clearWeatherField,
+      renderWeatherField,
+      startStationPicker,
+      stopStationPicker,
+      renderConstellations,
+      clearConstellationGroup,
+    };
 
   });
   define('scene3d', (exports, module) => {
@@ -2381,6 +2569,7 @@
     let lastFramedRadius = null;
 
     const stationMeshes = new Map();
+  const constellationPoints = new Map();
 
     async function ensureThree() {
       if (!importPromise) {
@@ -2933,6 +3122,12 @@
         mesh.material.dispose();
       });
       stationMeshes.clear();
+      constellationPoints.forEach((entry) => {
+        scene?.remove(entry.points);
+        entry.points?.geometry?.dispose?.();
+        entry.material?.dispose?.();
+      });
+      constellationPoints.clear();
 
       earthGroup?.remove(groundTrackLine);
       earthGroup?.remove(stationGroup);
@@ -2978,7 +3173,88 @@
       passiveAtmosphereOffset = 0;
     }
 
-    module.exports = { setEarthRotationFromTime, frameOrbitView, updateGroundTrackSurface, updateGroundTrackVector, initScene, updateOrbitPath, updateSatellite, renderStations, updateLink, setTheme, disposeScene };
+    function ensureConstellationEntry(groupId, color) {
+      if (!isReady || !scene || !THREE) return null;
+      let entry = constellationPoints.get(groupId);
+      if (!entry) {
+        const geometry = new THREE.BufferGeometry();
+        const material = new THREE.PointsMaterial({
+          color: new THREE.Color(color || 0xffffff),
+          size: 0.02,
+          sizeAttenuation: true,
+          depthWrite: false,
+          transparent: true,
+          opacity: 0.92,
+        });
+        const points = new THREE.Points(geometry, material);
+        points.name = `constellation-${groupId}`;
+        scene.add(points);
+        entry = { geometry, material, points };
+        constellationPoints.set(groupId, entry);
+      } else if (color) {
+        entry.material.color.set(color);
+      }
+      entry.points.visible = true;
+      return entry;
+    }
+
+    function renderConstellations(groupId, satellites, options = {}) {
+      if (!isReady || !scene || !THREE) return;
+      if (!Array.isArray(satellites) || satellites.length === 0) {
+        clearConstellation(groupId);
+        return;
+      }
+      const color = options.color || '#ffffff';
+      const entry = ensureConstellationEntry(groupId, color);
+      if (!entry) return;
+      const positions = [];
+      satellites.forEach((sat) => {
+        if (!Array.isArray(sat?.rEci) || sat.rEci.length !== 3) return;
+        const vec = toVector3Eci(sat.rEci);
+        if (!vec) return;
+        positions.push(vec.x, vec.y, vec.z);
+      });
+      if (!positions.length) {
+        clearConstellation(groupId);
+        return;
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geometry.computeBoundingSphere();
+      entry.points.geometry.dispose();
+      entry.points.geometry = geometry;
+      entry.geometry = geometry;
+      entry.material.color.set(color);
+      entry.material.needsUpdate = true;
+      entry.points.visible = true;
+    }
+
+    function clearConstellation(groupId) {
+      const entry = constellationPoints.get(groupId);
+      if (!entry) return;
+      if (entry.points && scene) {
+        scene.remove(entry.points);
+      }
+      entry.points?.geometry?.dispose?.();
+      entry.material?.dispose?.();
+      constellationPoints.delete(groupId);
+    }
+
+    module.exports = {
+      setEarthRotationFromTime,
+      frameOrbitView,
+      updateGroundTrackSurface,
+      updateGroundTrackVector,
+      initScene,
+      updateOrbitPath,
+      updateSatellite,
+      renderStations,
+      updateLink,
+      setTheme,
+      disposeScene,
+      renderConstellations,
+      clearConstellation,
+    };
 
   });
   define('groundStations', (exports, module) => {
@@ -3072,10 +3348,59 @@
 
   });
   define('main', (exports, module) => {
-    const { state, mutate, subscribe, togglePlay, setTimeIndex, setTimeWarp, setTimeline, setComputed, setTheme, ensureStationSelected, upsertStation, selectStation } = require('state');
+    const {
+      state,
+      mutate,
+      subscribe,
+      togglePlay,
+      setTimeIndex,
+      setTimeWarp,
+      setTimeline,
+      setComputed,
+      setTheme,
+      ensureStationSelected,
+      upsertStation,
+      selectStation,
+      CONSTELLATION_GROUPS,
+      setConstellationEnabled,
+      setConstellationLoading,
+      setConstellationMetadata,
+      setConstellationError,
+    } = require('state');
     const { propagateOrbit, computeStationMetrics, constants: orbitConstants } = require('orbit');
-    const { initMap, updateGroundTrack, updateSatellitePosition, renderStations: renderStations2D, updateLinkLine, focusOnStation, flyToOrbit, annotateStationTooltip, toggleBaseLayer, setBaseLayer, invalidateSize: invalidateMap, startStationPicker, stopStationPicker, renderWeatherField, clearWeatherField } = require('map2d');
-    const { initScene, updateOrbitPath, updateSatellite, renderStations: renderStations3D, updateLink: updateLink3D, setEarthRotationFromTime, setTheme: setSceneTheme, frameOrbitView, updateGroundTrackSurface, updateGroundTrackVector } = require('scene3d');
+    const {
+      initMap,
+      updateGroundTrack,
+      updateSatellitePosition,
+      renderStations: renderStations2D,
+      updateLinkLine,
+      focusOnStation,
+      flyToOrbit,
+      annotateStationTooltip,
+      toggleBaseLayer,
+      setBaseLayer,
+      invalidateSize: invalidateMap,
+      startStationPicker,
+      stopStationPicker,
+      renderWeatherField,
+      clearWeatherField,
+      renderConstellations: renderConstellations2D,
+      clearConstellationGroup: clearConstellation2D,
+    } = require('map2d');
+    const {
+      initScene,
+      updateOrbitPath,
+      updateSatellite,
+      renderStations: renderStations3D,
+      updateLink: updateLink3D,
+      setEarthRotationFromTime,
+      setTheme: setSceneTheme,
+      frameOrbitView,
+      updateGroundTrackSurface,
+      updateGroundTrackVector,
+      renderConstellations: renderConstellations3D,
+      clearConstellation: clearConstellation3D,
+    } = require('scene3d');
     const { loadStationsFromServer, persistStation, deleteStationRemote } = require('groundStations');
     const { isoNowLocal, clamp, formatAngle, formatDistanceKm, formatLoss, formatDoppler, formatDuration } = require('utils');
     const { searchResonances } = require('resonanceSolver');
@@ -3118,6 +3443,9 @@
       results: [],
       query: null,
     };
+
+    const constellationStore = new Map();
+    let lastConstellationIndex = -1;
 
     const PANEL_MIN_WIDTH = 240;
     const PANEL_MAX_WIDTH = 520;
@@ -3588,6 +3916,7 @@
         'stationPickOnMap', 'stationPickHint',
         'weatherFieldSelect', 'weatherLevelSelect', 'weatherSamples', 'weatherSamplesSlider',
         'weatherTime', 'weatherFetchBtn', 'weatherClearBtn', 'weatherStatus',
+        'constellationControls', 'constellationList', 'constellationStatus',
       ];
       ids.forEach((id) => {
         elements[id] = document.getElementById(id);
@@ -3600,6 +3929,227 @@
       elements.viewGrid = document.getElementById('viewGrid');
       elements.resonanceHint = document.querySelector('[data-resonance-hint]');
       elements.atmosModelInputs = document.querySelectorAll('input[name="atmosModel"]');
+    }
+
+    function getConstellationConfig(groupId) {
+      return CONSTELLATION_GROUPS.find((group) => group.id === groupId) ?? null;
+    }
+
+    function setConstellationStatusMessage(message = '', status = 'idle') {
+      if (!elements.constellationStatus) return;
+      if (!message) {
+        elements.constellationStatus.hidden = true;
+        elements.constellationStatus.textContent = '';
+        elements.constellationStatus.dataset.status = 'idle';
+        return;
+      }
+      elements.constellationStatus.textContent = message;
+      elements.constellationStatus.dataset.status = status;
+      elements.constellationStatus.hidden = false;
+    }
+
+    function renderConstellationControls() {
+      if (!elements.constellationList) return;
+      elements.constellationList.innerHTML = '';
+      CONSTELLATION_GROUPS.forEach((group) => {
+        const label = document.createElement('label');
+        label.className = 'constellation-toggle';
+        label.dataset.constellation = group.id;
+        label.style.setProperty('--constellation-color', group.color);
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.dataset.constellation = group.id;
+        checkbox.disabled = !window.satellite;
+        label.appendChild(checkbox);
+
+        const name = document.createElement('span');
+        name.className = 'constellation-name';
+        name.textContent = group.label;
+        label.appendChild(name);
+
+        const count = document.createElement('span');
+        count.className = 'constellation-count';
+        count.hidden = true;
+        label.appendChild(count);
+
+        elements.constellationList.appendChild(label);
+      });
+
+      if (!window.satellite) {
+        setConstellationStatusMessage('satellite.js failed to load; constellation overlays are unavailable.', 'error');
+      } else {
+        setConstellationStatusMessage('Select constellations to overlay on the map and globe.', 'idle');
+      }
+
+      updateConstellationToggleStates();
+    }
+
+    function updateConstellationToggleStates(snapshot = state) {
+      if (!elements.constellationList) return;
+      const registry = snapshot.constellations?.registry ?? {};
+      CONSTELLATION_GROUPS.forEach((group) => {
+        const selector = `.constellation-toggle[data-constellation="${group.id}"]`;
+        const label = elements.constellationList.querySelector(selector);
+        if (!label) return;
+        const checkbox = label.querySelector('input[type="checkbox"][data-constellation]');
+        const groupState = registry[group.id] ?? {};
+        if (checkbox && !checkbox.matches(':focus')) {
+          checkbox.checked = Boolean(groupState.enabled);
+          checkbox.disabled = Boolean(groupState.loading) || !window.satellite;
+        }
+        label.dataset.active = groupState.enabled ? 'true' : 'false';
+        label.dataset.loading = groupState.loading ? 'true' : 'false';
+        label.dataset.error = groupState.error ? 'true' : 'false';
+        const countEl = label.querySelector('.constellation-count');
+        if (countEl) {
+          if (groupState.count) {
+            countEl.hidden = false;
+            countEl.textContent = String(groupState.count);
+          } else {
+            countEl.hidden = true;
+            countEl.textContent = '';
+          }
+        }
+      });
+    }
+
+    function hasActiveConstellations(snapshot = state) {
+      const registry = snapshot.constellations?.registry;
+      if (!registry) return false;
+      return Object.values(registry).some((group) => group?.enabled);
+    }
+
+    function getActiveConstellationDatasets() {
+      const registry = state.constellations?.registry ?? {};
+      return CONSTELLATION_GROUPS.map((group) => {
+        if (!registry[group.id]?.enabled) return null;
+        const storeEntry = constellationStore.get(group.id);
+        if (!storeEntry || !Array.isArray(storeEntry.entries) || !storeEntry.entries.length) {
+          return null;
+        }
+        return {
+          id: group.id,
+          color: storeEntry.color ?? group.color,
+          entries: storeEntry.entries,
+        };
+      }).filter(Boolean);
+    }
+
+    function computeConstellationPositions(timeline, epochIso, datasets) {
+      if (!Array.isArray(timeline) || !timeline.length) return {};
+      if (!Array.isArray(datasets) || !datasets.length) return {};
+      const satLib = window.satellite;
+      if (!satLib) return {};
+
+      const epochDate = new Date(epochIso);
+      const epochMs = epochDate.getTime();
+      if (Number.isNaN(epochMs)) return {};
+
+      const sampleDates = timeline.map((seconds) => new Date(epochMs + seconds * 1000));
+      const gmstValues = sampleDates.map((date) => satLib.gstime(date));
+
+      const result = {};
+
+      datasets.forEach((dataset) => {
+        if (!dataset) return;
+        const satellites = [];
+        dataset.entries.forEach((entry) => {
+          if (!entry?.satrec) return;
+          const timelineSamples = [];
+          for (let idx = 0; idx < sampleDates.length; idx += 1) {
+            const date = sampleDates[idx];
+            const gmst = gmstValues[idx];
+            try {
+              const propagation = satLib.propagate(entry.satrec, date);
+              const position = propagation?.position;
+              if (!position) {
+                timelineSamples.push(null);
+                continue;
+              }
+              const geodetic = satLib.eciToGeodetic(position, gmst);
+              if (!geodetic) {
+                timelineSamples.push(null);
+                continue;
+              }
+              const lat = satLib.degreesLat(geodetic.latitude);
+              const lon = ((satLib.degreesLong(geodetic.longitude) + 540) % 360) - 180;
+              const alt = geodetic.height;
+              if (!Number.isFinite(lat) || !Number.isFinite(lon) || !Number.isFinite(alt)) {
+                timelineSamples.push(null);
+                continue;
+              }
+              timelineSamples.push({
+                lat,
+                lon,
+                alt,
+                rEci: [position.x, position.y, position.z],
+              });
+            } catch (error) {
+              timelineSamples.push(null);
+            }
+          }
+          satellites.push({
+            id: entry.id,
+            name: entry.name,
+            timeline: timelineSamples,
+          });
+        });
+        if (satellites.length) {
+          result[dataset.id] = {
+            color: dataset.color,
+            satellites,
+          };
+        }
+      });
+
+      return result;
+    }
+
+    function refreshConstellationPositions({ force = false } = {}) {
+      if (!hasActiveConstellations()) {
+        mutate((draft) => {
+          draft.computed.constellationPositions = {};
+        });
+        lastConstellationIndex = -1;
+        return;
+      }
+      if (!window.satellite) {
+        setConstellationStatusMessage('satellite.js is required to enable constellation overlays.', 'error');
+        return;
+      }
+      const timeline = state.time.timeline ?? [];
+      if (!timeline.length) return;
+      const datasets = getActiveConstellationDatasets();
+      if (!datasets.length) {
+        mutate((draft) => {
+          draft.computed.constellationPositions = {};
+        });
+        lastConstellationIndex = -1;
+        return;
+      }
+
+      if (!force) {
+        const currentMap = state.computed?.constellationPositions ?? {};
+        const hasAllGroups = datasets.every((dataset) => currentMap[dataset.id]);
+        if (hasAllGroups && Object.keys(currentMap).length === datasets.length) {
+          return;
+        }
+      }
+
+      const positions = computeConstellationPositions(timeline, state.epoch, datasets);
+      mutate((draft) => {
+        draft.computed.constellationPositions = positions;
+      });
+      lastConstellationIndex = -1;
+    }
+
+    function clearAllConstellations() {
+      CONSTELLATION_GROUPS.forEach((group) => {
+        clearConstellation2D(group.id);
+        clearConstellation3D(group.id);
+      });
+      lastConstellationIndex = -1;
     }
 
     function activatePanelSection(sectionId) {
@@ -3967,6 +4517,7 @@
         elements.weatherTime.value = (state.weather?.time ?? isoNowLocal()).slice(0, 16);
       }
       setWeatherStatus('');
+      renderConstellationControls();
       renderOptimizerResults();
       if (elements.stationPickOnMap) {
         elements.stationPickOnMap.dataset.active = 'false';
@@ -4252,6 +4803,15 @@
         setWeatherStatus('Overlay cleared');
       });
 
+      elements.constellationList?.addEventListener('change', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        if (target.type !== 'checkbox' || !target.dataset.constellation) return;
+        const groupId = target.dataset.constellation;
+        const enabled = target.checked;
+        void handleConstellationToggle(groupId, enabled);
+      });
+
       elements.btnPlay?.addEventListener('click', () => {
         playbackLoop.lastTimestamp = null;
         togglePlay(true);
@@ -4426,6 +4986,157 @@
       });
     }
 
+    async function loadConstellationGroup(groupId) {
+      const config = getConstellationConfig(groupId);
+      if (!config) {
+        throw new Error(`Unknown constellation group: ${groupId}`);
+      }
+      if (!window.satellite) {
+        throw new Error('satellite.js is required to enable constellation overlays.');
+      }
+
+      const registryEntry = state.constellations?.registry?.[groupId];
+      const existing = constellationStore.get(groupId);
+      if (existing && registryEntry?.hasData && Array.isArray(existing.entries) && existing.entries.length) {
+        return existing;
+      }
+
+      setConstellationLoading(groupId, true);
+      setConstellationStatusMessage(`Loading ${config.label}…`, 'loading');
+
+      try {
+        const response = await fetch(`/api/tles/${encodeURIComponent(groupId)}`);
+        if (!response.ok) {
+          let detail = response.statusText || `HTTP ${response.status}`;
+          try {
+            const errorPayload = await response.json();
+            if (errorPayload?.detail) {
+              detail = errorPayload.detail;
+            }
+          } catch (error) {
+            /* ignore parse errors */
+          }
+          throw new Error(detail);
+        }
+
+        const payload = await response.json();
+        const satLib = window.satellite;
+        const entries = [];
+        const seen = new Set();
+        if (Array.isArray(payload?.tles)) {
+          payload.tles.forEach((tle, idx) => {
+            try {
+              const satrec = satLib.twoline2satrec(tle.line1, tle.line2);
+              if (!satrec) return;
+              const satId = String(tle.norad_id ?? satrec.satnum ?? `${groupId}-${idx}`);
+              if (seen.has(satId)) return;
+              seen.add(satId);
+              entries.push({
+                id: satId,
+                name: tle.name || satId,
+                satrec,
+                line1: tle.line1,
+                line2: tle.line2,
+              });
+            } catch (error) {
+              console.warn('Skipped invalid TLE record', error);
+            }
+          });
+        }
+
+        const fetchedAt = payload?.fetched_at ?? new Date().toISOString();
+        constellationStore.set(groupId, {
+          id: groupId,
+          label: config.label,
+          color: config.color,
+          entries,
+          fetchedAt,
+        });
+
+        setConstellationMetadata(groupId, {
+          hasData: entries.length > 0,
+          count: entries.length,
+          fetchedAt,
+        });
+        setConstellationError(groupId, null);
+        setConstellationStatusMessage(`Loaded ${entries.length} satellites for ${config.label}. Overlay active.`, 'ready');
+        return constellationStore.get(groupId);
+      } catch (error) {
+        setConstellationError(groupId, error?.message ?? 'Unknown error');
+        setConstellationStatusMessage(`Failed to load ${config.label}: ${error?.message ?? error}`, 'error');
+        throw error;
+      } finally {
+        setConstellationLoading(groupId, false);
+        updateConstellationToggleStates();
+      }
+    }
+
+    function activeConstellationLabels(snapshot = state) {
+      const registry = snapshot.constellations?.registry ?? {};
+      return CONSTELLATION_GROUPS.filter((group) => registry[group.id]?.enabled).map((group) => group.label);
+    }
+
+    function forceConstellationRefresh() {
+      if (!hasActiveConstellations()) {
+        clearAllConstellations();
+        return;
+      }
+      if (!Array.isArray(state.computed?.dataPoints) || !state.computed.dataPoints.length) {
+        return;
+      }
+      const index = clamp(state.time.index, 0, state.computed.dataPoints.length - 1);
+      if (!Object.keys(state.computed?.constellationPositions ?? {}).length) {
+        refreshConstellationPositions();
+      }
+      updateConstellationVisuals(index);
+      lastConstellationIndex = index;
+    }
+
+    async function handleConstellationToggle(groupId, enabled) {
+      const config = getConstellationConfig(groupId);
+      if (!config) return;
+      if (!window.satellite) {
+        setConstellationStatusMessage('satellite.js is required to enable constellation overlays.', 'error');
+        updateConstellationToggleStates();
+        return;
+      }
+
+      if (enabled) {
+        try {
+          const dataset = await loadConstellationGroup(groupId);
+          setConstellationEnabled(groupId, true);
+          refreshConstellationPositions({ force: true });
+          updateConstellationToggleStates();
+          const count = dataset?.entries?.length ?? state.constellations?.registry?.[groupId]?.count ?? 0;
+          const labels = activeConstellationLabels();
+          const suffix = labels.length > 1 ? `Active overlays: ${labels.join(', ')}.` : `${config.label} overlay active.`;
+          setConstellationStatusMessage(`Loaded ${count} satellites for ${config.label}. ${suffix}`, 'ready');
+          forceConstellationRefresh();
+        } catch (error) {
+          console.error('Constellation enable failed', error);
+          setConstellationEnabled(groupId, false);
+          const checkbox = elements.constellationList?.querySelector(`input[data-constellation="${groupId}"]`);
+          if (checkbox) checkbox.checked = false;
+        } finally {
+          updateConstellationToggleStates();
+        }
+      } else {
+        setConstellationEnabled(groupId, false);
+        clearConstellation2D(groupId);
+        clearConstellation3D(groupId);
+        refreshConstellationPositions({ force: true });
+        updateConstellationToggleStates();
+        if (!hasActiveConstellations()) {
+          setConstellationStatusMessage('Select constellations to overlay on the map and globe.', 'idle');
+          lastConstellationIndex = -1;
+        } else {
+          const labels = activeConstellationLabels();
+          setConstellationStatusMessage(`Overlay active: ${labels.join(', ')}`, 'ready');
+        }
+        forceConstellationRefresh();
+      }
+    }
+
     async function fetchWeatherFieldData() {
       if (!elements.weatherFetchBtn) return;
       const variableKey = elements.weatherFieldSelect?.value || state.weather?.variable || 'wind_speed';
@@ -4511,6 +5222,17 @@
         : undefined;
       const orbitData = propagateOrbit(state, propagateOptions);
       setTimeline({ timeline: orbitData.timeline, totalSeconds: orbitData.totalTime });
+      let constellationPositions = {};
+      if (hasActiveConstellations() && window.satellite) {
+        const datasets = getActiveConstellationDatasets();
+        if (datasets.length) {
+          constellationPositions = computeConstellationPositions(
+            orbitData.timeline,
+            state.epoch,
+            datasets,
+          );
+        }
+      }
       const metrics = computeStationMetrics(
         orbitData.dataPoints,
         getSelectedStation(),
@@ -4525,6 +5247,7 @@
         groundTrack: orbitData.groundTrack,
         metrics,
         resonance: orbitData.resonance,
+        constellationPositions,
       });
       updateOrbitPath(orbitData.dataPoints);
       updateGroundTrackSurface(orbitData.groundTrack);
@@ -4540,6 +5263,10 @@
         hasMapBeenFramed = true;
       }
       await recomputeMetricsOnly(true);
+      lastConstellationIndex = -1;
+      if (hasActiveConstellations()) {
+        forceConstellationRefresh();
+      }
     }
 
     async function recomputeMetricsOnly(force = false) {
@@ -4628,6 +5355,17 @@
       updateLink3D(current, station);
       renderStations2D(state.stations.list, state.stations.selectedId);
       updateMetricsUI(index);
+      if (hasActiveConstellations()) {
+        if (state.time.index !== lastConstellationIndex) {
+          if (!Object.keys(state.computed?.constellationPositions ?? {}).length) {
+            refreshConstellationPositions();
+          }
+          updateConstellationVisuals(index);
+          lastConstellationIndex = state.time.index;
+        }
+      } else if (lastConstellationIndex !== -1) {
+        clearAllConstellations();
+      }
       renderOrbitMessages();
     }
 
@@ -4635,6 +5373,63 @@
       if (!Number.isFinite(altitudeKm) || altitudeKm <= 0) return 0;
       const r = EARTH_RADIUS_KM;
       return Math.sqrt((r + altitudeKm) ** 2 - r ** 2);
+    }
+
+    function updateConstellationVisuals(targetIndex = null) {
+      if (!hasActiveConstellations()) {
+        clearAllConstellations();
+        return;
+      }
+      const timeline = state.time.timeline ?? [];
+      if (!timeline.length) {
+        clearAllConstellations();
+        return;
+      }
+      const registry = state.constellations?.registry ?? {};
+      const index = clamp(
+        targetIndex == null ? state.time.index : targetIndex,
+        0,
+        timeline.length - 1,
+      );
+      const positionMap = state.computed?.constellationPositions ?? {};
+
+      CONSTELLATION_GROUPS.forEach((group) => {
+        if (!registry[group.id]?.enabled) {
+          clearConstellation2D(group.id);
+          clearConstellation3D(group.id);
+          return;
+        }
+
+        const groupPayload = positionMap[group.id];
+        if (!groupPayload || !Array.isArray(groupPayload.satellites)) {
+          clearConstellation2D(group.id);
+          clearConstellation3D(group.id);
+          return;
+        }
+
+        const markers = [];
+        groupPayload.satellites.forEach((satellite) => {
+          const snapshot = satellite?.timeline?.[index];
+          if (!snapshot) return;
+          if (!Number.isFinite(snapshot.lat) || !Number.isFinite(snapshot.lon)) return;
+          markers.push({
+            id: satellite.id,
+            name: satellite.name,
+            lat: snapshot.lat,
+            lon: snapshot.lon,
+            alt: snapshot.alt,
+            rEci: snapshot.rEci,
+          });
+        });
+
+        if (markers.length) {
+          renderConstellations2D(group.id, markers, { color: groupPayload.color });
+          renderConstellations3D(group.id, markers, { color: groupPayload.color });
+        } else {
+          clearConstellation2D(group.id);
+          clearConstellation3D(group.id);
+        }
+      });
     }
 
     function updateMetricsUI(index) {
@@ -5071,6 +5866,8 @@
       if (elements.weatherClearBtn) {
         elements.weatherClearBtn.disabled = !weatherState.data;
       }
+
+      updateConstellationToggleStates(snapshot);
 
       const shouldRenderWeather = weatherState.active && weatherState.data;
       if (shouldRenderWeather) {

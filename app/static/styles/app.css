@@ -1462,6 +1462,101 @@ input[type="range"] {
   color: var(--accent);
 }
 
+.constellation-controls {
+  margin: 1rem 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.constellation-controls h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.constellation-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+}
+
+.constellation-toggle {
+  --constellation-color: #38bdf8;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.85rem 0.3rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+  transition: border-color var(--transition), background var(--transition), color var(--transition);
+}
+
+.constellation-toggle::before {
+  content: '';
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 999px;
+  background: var(--constellation-color);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--constellation-color) 25%, transparent);
+}
+
+.constellation-toggle input {
+  width: auto;
+  margin: 0;
+}
+
+.constellation-toggle[data-active="true"] {
+  border-color: var(--constellation-color);
+  background: color-mix(in srgb, var(--constellation-color) 12%, transparent);
+}
+
+.constellation-toggle[data-loading="true"] {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.constellation-toggle[data-error="true"] {
+  border-color: #f87171;
+}
+
+.constellation-name {
+  font-size: 0.85rem;
+}
+
+.constellation-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  padding: 0 0.35rem;
+  height: 1.2rem;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.constellation-status {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.constellation-status[data-status="error"] {
+  color: #dc2626;
+}
+
+.constellation-status[data-status="loading"] {
+  color: #2563eb;
+}
+
 .view-grid {
   flex: 1;
   display: grid;

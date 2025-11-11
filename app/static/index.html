@@ -517,6 +517,11 @@
           <button data-view="3d" role="tab" aria-selected="false">3D only</button>
           <button data-view="2d" role="tab" aria-selected="false">2D only</button>
         </div>
+        <div class="constellation-controls" id="constellationControls">
+          <h3>Constellation overlays</h3>
+          <div class="constellation-list" id="constellationList" role="group" aria-label="Toggle satellite constellations"></div>
+          <p class="constellation-status hint" id="constellationStatus" hidden></p>
+        </div>
         <div class="view-grid" id="viewGrid" data-active-view="dual">
           <div id="threeContainer" class="view-pane view-3d" aria-label="3D globe">
             <canvas id="threeCanvas" class="globe-canvas" aria-hidden="true"></canvas>
@@ -596,6 +601,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/satellite.js@4.1.4/dist/satellite.min.js" crossorigin="anonymous"></script>
   <script type="module" src="/static/app.js"></script>
 </body>
 </html>

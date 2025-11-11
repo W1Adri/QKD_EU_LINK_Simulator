@@ -14,9 +14,10 @@ import hashlib
 import json
 import math
 import sqlite3
+import re
 from contextlib import contextmanager
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import lru_cache
 from math import ceil, inf, isfinite, sqrt
 from pathlib import Path
@@ -923,6 +924,108 @@ class WeatherFieldService:
         return build_weather_field(query, self._client)
 
 
+@dataclass
+class TleCacheEntry:
+    expires_at: datetime
+    payload: Dict[str, Any]
+
+
+class TleServiceError(RuntimeError):
+    """Base class for TLE retrieval errors."""
+
+
+class TleGroupNotFoundError(TleServiceError):
+    """Raised when requesting an unknown constellation group."""
+
+
+class TleProviderError(TleServiceError):
+    """Raised when the upstream provider returns an unexpected response."""
+
+
+class TleService:
+    """Fetches and caches TLE datasets from public providers."""
+
+    CELESTRAK_ENDPOINT = "https://celestrak.org/NORAD/elements/gp.php"
+    GROUP_ALIAS = {
+        "starlink": "starlink",
+        "oneweb": "oneweb",
+        "gps": "gps-ops",
+        "galileo": "galileo",
+        "glonass": "glonass",
+    }
+
+    def __init__(self, cache_ttl: timedelta = timedelta(minutes=30)) -> None:
+        self._cache: Dict[str, TleCacheEntry] = {}
+        self._cache_ttl = cache_ttl
+
+    def list_groups(self) -> List[str]:
+        return list(self.GROUP_ALIAS.keys())
+
+    def get_group(self, group_id: str) -> Dict[str, Any]:
+        normalized = (group_id or "").strip().lower()
+        if normalized not in self.GROUP_ALIAS:
+            raise TleGroupNotFoundError(f"Constelación desconocida: {group_id}")
+
+        cached = self._cache.get(normalized)
+        now = datetime.utcnow()
+        if cached and cached.expires_at > now:
+            return copy.deepcopy(cached.payload)
+
+        payload = self._download_group(normalized)
+        expires_at = now + self._cache_ttl
+        payload["fetched_at"] = now.isoformat(timespec="seconds") + "Z"
+        payload["expires_at"] = expires_at.isoformat(timespec="seconds") + "Z"
+        payload["ttl_seconds"] = int(self._cache_ttl.total_seconds())
+
+        self._cache[normalized] = TleCacheEntry(expires_at=expires_at, payload=copy.deepcopy(payload))
+        return payload
+
+    def _download_group(self, normalized_group: str) -> Dict[str, Any]:
+        alias = self.GROUP_ALIAS[normalized_group]
+        try:
+            response = requests.get(
+                self.CELESTRAK_ENDPOINT,
+                params={"GROUP": alias, "FORMAT": "TLE"},
+                timeout=15,
+            )
+        except requests.RequestException as exc:
+            raise TleProviderError(f"Error de conexión al proveedor TLE: {exc}") from exc
+
+        if response.status_code != 200:
+            raise TleProviderError(
+                f"Proveedor TLE devolvió estado {response.status_code} para '{alias}'."
+            )
+
+        entries = self._parse_tle_response(response.text)
+        if not entries:
+            raise TleProviderError(f"Proveedor TLE no devolvió datos para '{alias}'.")
+
+        return {
+            "group": normalized_group,
+            "alias": alias,
+            "count": len(entries),
+            "tles": entries,
+            "source": "celestrak",
+        }
+
+    @staticmethod
+    def _parse_tle_response(payload: str) -> List[Dict[str, Any]]:
+        lines = [line.strip() for line in payload.splitlines() if line.strip()]
+        entries: List[Dict[str, Any]] = []
+        for idx in range(0, len(lines) - 2, 3):
+            name, line1, line2 = lines[idx : idx + 3]
+            if not (line1.startswith("1 ") and line2.startswith("2 ")):
+                continue
+            norad_id = None
+            tokens = line1.split()
+            if len(tokens) >= 2:
+                match = re.match(r"^(\d+)", tokens[1])
+                if match:
+                    norad_id = match.group(1)
+            entries.append({"name": name, "line1": line1, "line2": line2, "norad_id": norad_id})
+        return entries
+
+
 # ---------------------------------------------------------------------------
 # API schema models
 # ---------------------------------------------------------------------------
@@ -1361,6 +1464,7 @@ class QKDApplication:
         self.ogs_store = OGSStore(DATA_PATH)
         self.atmosphere = AtmosphereService()
         self.weather = WeatherFieldService()
+        self.tles = TleService()
         self.variant_pages = VARIANT_PAGES
 
         self.app = FastAPI(title="QKD Europe Planner", version="0.2.0")
@@ -1414,6 +1518,24 @@ class QKDApplication:
             if not ORBIT3D_HTML.exists():
                 return HTMLResponse("orbit3d.html not found", status_code=404)
             return FileResponse(str(ORBIT3D_HTML))
+
+        # ------------------- Constellation TLE access ----------------
+
+        @app.get("/api/tles")
+        async def list_tle_groups() -> Dict[str, Any]:
+            groups = await run_in_threadpool(self.tles.list_groups)
+            return {"groups": groups}
+
+        @app.get("/api/tles/{group_id}")
+        async def fetch_tle_group(group_id: str):
+            try:
+                return await run_in_threadpool(self.tles.get_group, group_id)
+            except TleGroupNotFoundError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+            except TleProviderError as exc:
+                raise HTTPException(status_code=502, detail=str(exc)) from exc
+            except Exception as exc:  # pylint: disable=broad-except
+                raise HTTPException(status_code=500, detail=f"Error inesperado solicitando TLE: {exc}") from exc
 
         # ------------------------- OGS management ----------------------
 
