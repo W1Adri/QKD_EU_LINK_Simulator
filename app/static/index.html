@@ -26,21 +26,36 @@
         <p>Visualize resonant orbits and Earth-to-space optical links</p>
       </div>
       <div class="header-actions">
-        <button id="btnPanelToggle" type="button" class="ghost">Hide panel</button>
+        <button id="btnPanelToggle" type="button" class="ghost" aria-pressed="false">Show panel</button>
         <button id="btnMapStyle" type="button" class="ghost">Satellite map</button>
         <button id="btnTheme" type="button" class="ghost" aria-pressed="false">Dark mode</button>
       </div>
     </header>
 
     <main class="workspace">
-      <aside id="controlPanel" class="control-panel" data-collapsed="false" aria-expanded="true">
+      <aside id="controlPanel" class="control-panel" data-collapsed="true" aria-expanded="false">
         <nav class="panel-tabs" aria-label="Configuration sections">
-          <button type="button" class="is-active" data-section-target="orbit">Orbit &amp; Resonance</button>
-          <button type="button" data-section-target="optics">Optical Link</button>
-          <button type="button" data-section-target="stations">Ground Stations</button>
-          <button type="button" data-section-target="analytics">Analytics</button>
-          <button type="button" data-section-target="weather">Weather Layers</button>
-          <button type="button" data-section-target="atmosphere">Atmospheric Models</button>
+          <button type="button" class="is-active" data-section-target="orbit" aria-label="Orbit & Resonance">
+            <span class="tab-label">Orbit &amp; Resonance</span>
+          </button>
+          <button type="button" data-section-target="optics" aria-label="Optical Link">
+            <span class="tab-label">Optical Link</span>
+          </button>
+          <button type="button" data-section-target="stations" aria-label="Ground Stations">
+            <span class="tab-label">Ground Stations</span>
+          </button>
+          <button type="button" data-section-target="analytics" aria-label="Analytics">
+            <span class="tab-label">Analytics</span>
+          </button>
+          <button type="button" data-section-target="weather" aria-label="Weather Layers">
+            <span class="tab-label">Weather Layers</span>
+          </button>
+          <button type="button" data-section-target="atmosphere" aria-label="Atmospheric Models">
+            <span class="tab-label">Atmospheric Models</span>
+          </button>
+          <button type="button" data-section-target="help" aria-label="Help & Documentation">
+            <span class="tab-label">Help &amp; Documentation</span>
+          </button>
         </nav>
         <div class="panel-content">
           <section class="panel-section is-active" data-section="orbit">
@@ -61,6 +76,16 @@
                 <button type="button" class="info-button" aria-label="What is the epoch?" data-info="Reference epoch in Coordinated Universal Time at which the orbital elements are valid.">i</button>
               </div>
               <input id="epochInput" type="datetime-local" />
+            </div>
+            <div class="field">
+              <div class="field-label">
+                <label>Mode</label>
+                <button type="button" class="info-button" aria-label="Simulation mode" data-info="Switch between single-satellite mode and constellation (Walker) design.">i</button>
+              </div>
+              <div class="mode-select">
+                <label><input id="modeIndividual" name="mode" type="radio" value="individual" checked /> Individual</label>
+                <label><input id="modeConstellation" name="mode" type="radio" value="constellation" /> Constelación</label>
+              </div>
             </div>
             <form id="optimizerForm" class="optimizer" autocomplete="off">
               <div class="field-group">
@@ -143,7 +168,67 @@
               </div>
               <p id="optSummary" class="hint"></p>
               <div id="optResults" class="optimizer-results"></div>
+            <div id="optimizationPanel" class="optimizer-panel">
+              <h3>Optimización de Constelación</h3>
+              <div class="field">
+                <label for="simDuration">Duración de simulación (s)</label>
+                <input id="simDuration" type="number" min="10" step="10" value="3600" />
+              </div>
+              <div class="field">
+                <label>Puntos de control</label>
+                <div class="control-points">
+                  <button id="btnDefinePoints" type="button" class="btn-secondary">Definir puntos de control</button>
+                  <span id="pointsCount">0 puntos</span>
+                </div>
+                <div id="pointsList" class="points-list" style="margin-top:6px;max-height:120px;overflow:auto;font-size:0.95em;"></div>
+              </div>
+              <div class="field">
+                <button id="btnOptimize" type="button" class="btn-primary">Optimizar diseño</button>
+                <button id="btnCancelOptimize" type="button" class="btn-secondary" style="margin-left:8px;display:none;">Cancelar</button>
+                <span id="optStatus" class="hint">--</span>
+              </div>
+              <div class="field" style="margin-top:6px">
+                <label for="optProgress">Progreso</label>
+                <progress id="optProgress" max="1" value="0" style="width:100%;display:block"></progress>
+              </div>
+              <div class="field" style="margin-top:6px">
+                <label><input id="workerToggle" type="checkbox" /> Usar Web Worker para precomputación</label>
+              </div>
+              <div class="field" style="margin-top:6px">
+                <label for="workerCount">Workers</label>
+                <select id="workerCount">
+                  <option value="1">1 (single)</option>
+                  <option value="2">2</option>
+                  <option value="4">4</option>
+                </select>
+              </div>
+            </div>
             </form>
+            <div id="walkerPanel" class="field-group" hidden>
+              <header>
+                <h3>Walker Delta parameters</h3>
+                <p class="hint">Define T (total sats), P (planes) and F (phasing)</p>
+              </header>
+              <div class="field">
+                <div class="field-label">
+                  <label for="walkerT">T (total satellites)</label>
+                </div>
+                <input id="walkerT" type="number" min="1" value="24" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="walkerP">P (planes)</label>
+                </div>
+                <input id="walkerP" type="number" min="1" value="6" />
+              </div>
+              <div class="field">
+                <div class="field-label">
+                  <label for="walkerF">F (phasing)</label>
+                </div>
+                <input id="walkerF" type="number" min="0" value="1" />
+              </div>
+            </div>
+
             <div class="field-group">
               <div class="field">
                 <div class="field-label">
@@ -503,6 +588,52 @@
                 <li>Shortwave radiation and direct normal irradiance for background noise estimates</li>
                 <li>Surface pressure and planetary boundary layer height (future integration)</li>
               </ul>
+            </div>
+          </section>
+
+          <section class="panel-section" data-section="help" hidden>
+            <header>
+              <h2>Help &amp; Documentation</h2>
+              <p>Reference and developer documentation for the simulator. Choose a topic below.</p>
+            </header>
+            <nav class="help-nav" aria-label="Help topics">
+              <button type="button" data-help-topic="orbits">Orbits (elements, epochs)</button>
+              <button type="button" data-help-topic="resonance">Resonance logic (j:k search)</button>
+              <button type="button" data-help-topic="walker">Walker constellations</button>
+              <button type="button" data-help-topic="optimization">Optimizer (adaptive random search)</button>
+              <button type="button" data-help-topic="propagation">Propagation &amp; J2 model</button>
+              <button type="button" data-help-topic="backend">Backend TLE provider</button>
+              <button type="button" data-help-topic="workers">Web Workers &amp; precomputation</button>
+            </nav>
+            <div class="help-content">
+              <article id="help-orbits">
+                <h3>Orbits</h3>
+                <p>The simulator represents orbits using classical Keplerian elements (a, e, i, Ω, ω, M). The epoch input sets the reference time at which mean anomaly and RAAN/argument are defined. Semi-major axis is provided in kilometers. The internal propagation converts mean anomaly to eccentric anomaly using Newton's method and then to ECI coordinates for rendering and metrics.</p>
+              </article>
+              <article id="help-resonance" hidden>
+                <h3>Resonance solver (j:k)</h3>
+                <p>Resonance is computed by searching integer pairs (j, k) where j is Earth sidereal rotations and k is satellite orbits during the same time window. For a target semi-major axis the tool evaluates orbital period and finds j:k pairs whose derived semi-major axis lies within the tolerance. The search scans bounds set by the min/max rotations and orbits controls.</p>
+              </article>
+              <article id="help-walker" hidden>
+                <h3>Walker constellation generation</h3>
+                <p>Walker Δ patterns are created by distributing T satellites across P planes with phase F. The generator computes RAAN offsets and mean anomaly phasing to place satellites evenly across planes and along-track. Outputs are simple element sets that the propagation engine uses for visualization.</p>
+              </article>
+              <article id="help-optimization" hidden>
+                <h3>Optimizer</h3>
+                <p>The optimizer uses an adaptive random-search heuristic. It mutates candidate constellations (perturbing RAAN, mean anomaly, or orbital elements) and evaluates a revisit-time metric against user-defined control points. The evaluation uses precomputed timelines for satellite positions to avoid per-frame propagation overhead. The best solution is stored in the state and can be applied to the active orbit.</p>
+              </article>
+              <article id="help-propagation" hidden>
+                <h3>Propagation and J2</h3>
+                <p>Propagation is implemented using classical Kepler motion with an added J2 secular approximation: RAAN and argument of perigee secular rates are applied to each sample to simulate Earth's oblateness effects efficiently. For high fidelity needs a full SGP4 engine would be preferable, but the current approach balances performance and realism for planning tasks.</p>
+              </article>
+              <article id="help-backend" hidden>
+                <h3>Backend / TLE provider</h3>
+                <p>The backend exposes an API that fetches and caches TLE groups from CelesTrak. Requests are cached in-memory with a TTL to avoid repeated remote fetches. The frontend can request `/api/tles/{group}` to retrieve TLE sets for overlaying constellations.</p>
+              </article>
+              <article id="help-workers" hidden>
+                <h3>Web Workers &amp; precomputation</h3>
+                <p>Heavy propagation work is moved to Web Workers (optional). Workers accept batches of elements and timeline parameters, propagate each satellite, and stream partial results back to the main thread to render incremental polylines. Using transferable arrays and a worker pool reduces UI freezes for large constellations.</p>
+              </article>
             </div>
           </section>
         </div>

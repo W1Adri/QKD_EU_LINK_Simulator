@@ -110,6 +110,154 @@
     module.exports = { DEG2RAD, RAD2DEG, TWO_PI, clamp, lerp, formatDistanceKm, formatAngle, formatLoss, formatDuration, formatDoppler, isoNowLocal, haversineDistance, smoothArray };
 
   });
+  define('j2Propagator', (exports, module) => {
+    // Simple J2 secular rate approximations for RAAN and argument of perigee
+    const MU_EARTH = 398600.4418; // km^3/s^2
+    const EARTH_RADIUS_KM = 6378.137; // km
+    const J2 = 1.08263e-3;
+
+    function secularRates(a, e, iRad) {
+      // a in km, e unitless, iRad in radians
+      if (!a || a <= 0) return { dotOmega: 0, dotOmegaDeg: 0, dotArgPerigee: 0 };
+      const n = Math.sqrt(MU_EARTH / (a * a * a)); // mean motion (rad/s)
+      const re_a2 = (EARTH_RADIUS_KM * EARTH_RADIUS_KM) / (a * a);
+      const denom = Math.pow(1 - e * e, 2);
+      const cosI = Math.cos(iRad);
+      const cosI2 = cosI * cosI;
+
+      const dotOmega = -1.5 * J2 * n * re_a2 * cosI / denom; // rad/s
+      const dotArgPerigee = 0.75 * J2 * n * re_a2 * (5 * cosI2 - 1) / denom; // rad/s
+
+      return {
+        dotOmega, // rad/s
+        dotOmegaDeg: dotOmega * (180 / Math.PI),
+        dotArgPerigee, // rad/s
+        dotArgPerigeeDeg: dotArgPerigee * (180 / Math.PI),
+        meanMotion: n,
+      };
+    }
+
+    module.exports = { MU_EARTH, EARTH_RADIUS_KM, J2, secularRates };
+  });
+
+  define('walkerGenerator', (exports, module) => {
+    // Walker Delta constellation generator
+    // T = total satellites, P = number of planes, F = relative phasing
+    function generateWalkerConstellation(T, P, F, a, iDeg, e = 0.0, raanOffsetDeg = 0) {
+      const sats = [];
+      const S = Math.round(T / P) || 1; // satellites per plane
+      const i = Number(iDeg) || 0;
+      for (let p = 0; p < P; p += 1) {
+        const raan = (360 * p) / P + (raanOffsetDeg || 0);
+        for (let s = 0; s < S; s += 1) {
+          const m = (360 * s) / S + (360 * F * p) / T;
+          sats.push({
+            semiMajor: a,
+            eccentricity: e,
+            inclination: i,
+            raan: ((raan % 360) + 360) % 360,
+            argPerigee: 0,
+            meanAnomaly: ((m % 360) + 360) % 360,
+          });
+        }
+      }
+      return sats;
+    }
+
+    module.exports = { generateWalkerConstellation };
+  });
+
+  define('optimizationEngine', (exports, module) => {
+    const { haversineDistance } = require('utils');
+
+    function computeRevisitTime(constellationPositions, points, timelineSeconds, revisitThresholdKm = 500) {
+      // constellationPositions: { groupId: { satellites: [{ id,name,timeline:[{lat,lon,alt}] }] } }
+      // points: [{lat,lon}], timelineSeconds: array of times matching timelines
+      if (!Array.isArray(points) || !Array.isArray(timelineSeconds)) return { max: Infinity, mean: Infinity };
+
+      const perPointIntervals = points.map(() => []);
+      const numSamples = timelineSeconds.length;
+
+      for (let ti = 0; ti < numSamples; ti += 1) {
+        // collect all satellite positions at this time
+        const posList = [];
+        Object.values(constellationPositions).forEach((group) => {
+          (group.satellites || []).forEach((sat) => {
+            const snap = sat.timeline && sat.timeline[ti];
+            if (snap && Number.isFinite(snap.lat) && Number.isFinite(snap.lon)) {
+              posList.push(snap);
+            }
+          });
+        });
+
+        if (!posList.length) continue;
+
+        points.forEach((pt, pIdx) => {
+          let seen = false;
+          for (let s = 0; s < posList.length; s += 1) {
+            const satPos = posList[s];
+            const d = haversineDistance(pt.lat, pt.lon, satPos.lat, satPos.lon, 6371);
+            if (d <= revisitThresholdKm) { seen = true; break; }
+          }
+          if (seen) perPointIntervals[pIdx].push(timelineSeconds[ti]);
+        });
+      }
+
+      const revisitStats = perPointIntervals.map((times) => {
+        if (!times.length) return { max: Infinity, mean: Infinity };
+        const diffs = [];
+        for (let k = 1; k < times.length; k += 1) diffs.push(times[k] - times[k - 1]);
+        if (!diffs.length) return { max: 0, mean: 0 };
+        const max = Math.max(...diffs);
+        const mean = diffs.reduce((a, b) => a + b, 0) / diffs.length;
+        return { max, mean };
+      });
+
+      const valid = revisitStats.filter((s) => isFinite(s.max));
+      if (!valid.length) return { max: Infinity, mean: Infinity };
+      const maxRevisit = Math.max(...valid.map((s) => s.max));
+      const meanRevisit = valid.reduce((acc, s) => acc + s.mean, 0) / valid.length;
+      return { max: maxRevisit, mean: meanRevisit };
+    }
+
+    function mutateConstellation(constellation, sigmaDeg = 1.0) {
+      // Create a shallow mutated copy, perturbing RAAN and M by gaussian-like step
+      return constellation.map((sat) => {
+        const deltaRaan = (Math.random() * 2 - 1) * sigmaDeg;
+        const deltaM = (Math.random() * 2 - 1) * sigmaDeg;
+        return {
+          ...sat,
+          raan: ((sat.raan + deltaRaan) % 360 + 360) % 360,
+          meanAnomaly: ((sat.meanAnomaly + deltaM) % 360 + 360) % 360,
+        };
+      });
+    }
+
+    function optimizeConstellation(initialConstellation, constellationPositionsFactory, points, timelineSeconds, iterations = 100) {
+      // constellationPositionsFactory: (constellation) => precomputed positions structure matching computeRevisitTime input
+      let best = initialConstellation.map((s) => ({ ...s }));
+      let bestPositions = constellationPositionsFactory(best);
+      let bestScoreObj = computeRevisitTime(bestPositions, points, timelineSeconds);
+      let bestScore = bestScoreObj.max;
+
+      for (let it = 0; it < iterations; it += 1) {
+        const candidate = mutateConstellation(best, Math.max(0.1, 5 * (1 - it / iterations)));
+        const candidatePositions = constellationPositionsFactory(candidate);
+        const scoreObj = computeRevisitTime(candidatePositions, points, timelineSeconds);
+        const score = scoreObj.max;
+        if (score < bestScore) {
+          best = candidate;
+          bestPositions = candidatePositions;
+          bestScoreObj = scoreObj;
+          bestScore = score;
+        }
+      }
+
+      return { constellation: best, stats: bestScoreObj, positions: bestPositions };
+    }
+
+    module.exports = { computeRevisitTime, mutateConstellation, optimizeConstellation };
+  });
   define('state', (exports, module) => {
     const { isoNowLocal } = require('utils');
 
@@ -146,6 +294,7 @@
 
     const defaultState = {
       variant: document.body?.dataset?.variant ?? 'compact',
+      mode: 'individual',
       theme: 'light',
       satelliteName: 'Sat-QKD',
       epoch: isoNowLocal(),
@@ -195,6 +344,7 @@
         list: [],
         selectedId: null,
       },
+      optimizationPoints: [],
       constellations: createDefaultConstellationState(),
       computed: {
         semiMajor: null,
@@ -437,6 +587,7 @@
   });
   define('orbit', (exports, module) => {
     const { DEG2RAD, RAD2DEG, TWO_PI, clamp, haversineDistance } = require('utils');
+    const j2 = require('j2Propagator');
 
     const MU_EARTH = 398600.4418; // km^3/s^2
     const EARTH_RADIUS_KM = 6378.137;
@@ -772,9 +923,14 @@
       }
       const gmstInitial = gmstFromDate(epochDate);
 
+      // compute secular J2 rates for the (possibly) drifting elements
+      const rates = j2.secularRates(semiMajor, orbital.eccentricity, i);
       const dataPoints = timeline.map((t) => {
+        // apply secular drift to RAAN and argument of perigee
+        const raan_t = raan + (rates.dotOmega || 0) * t;
+        const argPerigee_t = argPerigee + (rates.dotArgPerigee || 0) * t;
         const M = (meanAnomaly0 + meanMotion * t) % TWO_PI;
-        const { rEci, vEci } = orbitalPositionVelocity(semiMajor, orbital.eccentricity, i, raan, argPerigee, M);
+        const { rEci, vEci } = orbitalPositionVelocity(semiMajor, orbital.eccentricity, i, raan_t, argPerigee_t, M);
         const gmst = normalizeAngle(gmstInitial + EARTH_ROT_RATE * t);
         const { rEcef, vEcef } = rotateEciToEcef(rEci, vEci, gmst);
         const geo = ecefToLatLon(rEcef);
@@ -970,12 +1126,8 @@
     const NIGHT_GLOW = 'rgba(255, 198, 120, 0.85)';
     const NIGHT_GLOW_EDGE = 'rgba(255, 140, 60, 0.0)';
 
+    // Prefer reliable CDN textures first to avoid noisy local 404s when /static/assets is not populated
     const TEXTURE_SOURCES = [
-      {
-        label: 'local',
-        day: '/static/assets/earth_day_4k.jpg',
-        night: '/static/assets/earth_night_4k.jpg',
-      },
       {
         label: 'cdn-three-globe',
         day: 'https://cdn.jsdelivr.net/npm/three-globe@2.30.0/example/img/earth-blue-marble.jpg',
@@ -985,6 +1137,11 @@
         label: 'cdn-nasa',
         day: 'https://cdn.jsdelivr.net/gh/astronexus/NasaBlueMarble@main/earth_daymap_2048.jpg',
         night: 'https://cdn.jsdelivr.net/gh/astronexus/NasaBlueMarble@main/earth_night_2048.jpg',
+      },
+      {
+        label: 'local',
+        day: '/static/assets/earth_day_4k.jpg',
+        night: '/static/assets/earth_night_4k.jpg',
       },
     ];
 
@@ -2663,12 +2820,50 @@
     }
 
     function buildLights() {
-      const ambient = new THREE.AmbientLight(0xffffff, 0.65);
-      sunLight = new THREE.DirectionalLight(0xffffff, 1.05);
-      sunLight.position.set(0, 3.5, 8);
-      const rim = new THREE.DirectionalLight(0x5eead4, 0.3);
+      // richer multi-source lighting for better visual depth
+      const ambient = new THREE.AmbientLight(0xffffff, 0.45);
+      // warm main sun light
+      sunLight = new THREE.DirectionalLight(0xfff2e6, 1.1);
+      sunLight.position.set(4, 6, 10);
+      sunLight.castShadow = false;
+      // cool rim light for highlight
+      const rim = new THREE.DirectionalLight(0x5eead4, 0.25);
       rim.position.set(-3, -2, -5);
-      scene.add(ambient, sunLight, rim);
+      // soft hemisphere for subtle sky/ground tint
+      const hemi = new THREE.HemisphereLight(0x87bfff, 0x0b1020, 0.18);
+      scene.add(ambient, sunLight, rim, hemi);
+    }
+
+    // Turn panel headers into accordions (collapsible sections)
+    function createPanelAccordions() {
+      try {
+        const panels = document.querySelectorAll('.panel-section');
+        panels.forEach((panel) => {
+          const hdr = panel.querySelector('header');
+          if (!hdr) return;
+          hdr.style.cursor = 'pointer';
+          // add chevron
+          let chev = hdr.querySelector('.accordion-chevron');
+          if (!chev) {
+            chev = document.createElement('span');
+            chev.className = 'accordion-chevron';
+            chev.textContent = '▾';
+            chev.style.marginLeft = '8px';
+            chev.style.opacity = '0.7';
+            hdr.appendChild(chev);
+          }
+          // start expanded by default; collapse when clicked
+          hdr.addEventListener('click', (ev) => {
+            // ignore clicks on info buttons
+            if (ev.target && ev.target.classList && ev.target.classList.contains('info-button')) return;
+            panel.classList.toggle('collapsed');
+            const collapsed = panel.classList.contains('collapsed');
+            chev.textContent = collapsed ? '▸' : '▾';
+            const contentChildren = Array.from(panel.children).filter((c) => c !== hdr);
+            contentChildren.forEach((el) => { el.style.display = collapsed ? 'none' : ''; });
+          });
+        });
+      } catch (e) { console.warn('Could not initialize panel accordions', e); }
     }
 
     async function buildEarth() {
@@ -3917,6 +4112,8 @@
         'weatherFieldSelect', 'weatherLevelSelect', 'weatherSamples', 'weatherSamplesSlider',
         'weatherTime', 'weatherFetchBtn', 'weatherClearBtn', 'weatherStatus',
         'constellationControls', 'constellationList', 'constellationStatus',
+        'modeIndividual', 'modeConstellation', 'walkerPanel', 'walkerT', 'walkerP', 'walkerF',
+        'btnDefinePoints', 'btnOptimize', 'btnCancelOptimize', 'simDuration', 'pointsCount', 'optStatus', 'pointsList', 'optProgress', 'workerToggle', 'workerCount',
       ];
       ids.forEach((id) => {
         elements[id] = document.getElementById(id);
@@ -4660,6 +4857,24 @@
         });
       });
 
+      // Wire help nav buttons (show corresponding help article)
+      try {
+        const helpButtons = document.querySelectorAll('.help-nav [data-help-topic]');
+        helpButtons.forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const topic = btn.dataset.helpTopic;
+            if (!topic) return;
+            activatePanelSection('help');
+            // ensure panel is visible when opening help
+            setPanelCollapsed(false);
+            const articles = document.querySelectorAll('.help-content article');
+            articles.forEach((a) => { a.hidden = true; });
+            const sel = document.getElementById(`help-${topic}`);
+            if (sel) sel.hidden = false;
+          });
+        });
+      } catch (e) { /* ignore if elements not present */ }
+
       elements.btnPanelToggle?.addEventListener('click', () => {
         const collapsed = elements.controlPanel?.dataset.collapsed === 'true';
         setPanelCollapsed(!collapsed);
@@ -4693,6 +4908,379 @@
         document.addEventListener('pointerup', handleUp, { once: true });
         document.addEventListener('pointercancel', handleUp, { once: true });
       });
+
+      // Mode selector (individual vs constellation)
+      if (elements.modeIndividual && elements.modeConstellation) {
+        const applyMode = (mode) => {
+          mutate((draft) => { draft.mode = mode; });
+          if (mode === 'constellation') {
+            if (elements.walkerPanel) elements.walkerPanel.hidden = false;
+            // precompute constellation positions if already loaded
+            refreshConstellationPositions({ force: false });
+          } else {
+            if (elements.walkerPanel) elements.walkerPanel.hidden = true;
+          }
+        };
+        elements.modeIndividual.addEventListener('change', () => applyMode('individual'));
+        elements.modeConstellation.addEventListener('change', () => applyMode('constellation'));
+      }
+
+      // Define control points (click-to-add on map) - stored in global state: state.optimizationPoints
+      if (elements.btnDefinePoints) {
+        // Toggle pick-mode: click map to add points, markers are draggable and removable
+        let pointPickingActive = false;
+        const optimizationMarkers = [];
+
+        function renderPointsList() {
+          if (!elements.pointsList) return;
+          elements.pointsList.innerHTML = '';
+          state.optimizationPoints.forEach((pt, idx) => {
+            const row = document.createElement('div');
+            row.style.display = 'flex';
+            row.style.justifyContent = 'space-between';
+            row.style.alignItems = 'center';
+            row.style.padding = '2px 4px';
+            const label = document.createElement('div');
+            label.textContent = `${pt.lat.toFixed(4)}, ${pt.lon.toFixed(4)}`;
+            const actions = document.createElement('div');
+            const btnCenter = document.createElement('button');
+            btnCenter.textContent = '→';
+            btnCenter.title = 'Centrar mapa';
+            btnCenter.style.marginRight = '6px';
+            btnCenter.addEventListener('click', () => {
+              if (map) map.setView([pt.lat, pt.lon], Math.max(map.getZoom(), 4));
+            });
+            const btnRemove = document.createElement('button');
+            btnRemove.textContent = '✖';
+            btnRemove.title = 'Eliminar punto';
+            btnRemove.addEventListener('click', () => {
+              // remove marker on map and from state
+              const m = optimizationMarkers[idx];
+              try { if (m && map) map.removeLayer(m); } catch (e) {}
+              optimizationMarkers.splice(idx, 1);
+              mutate((draft) => { draft.optimizationPoints.splice(idx, 1); });
+              renderPointsList();
+              if (elements.pointsCount) elements.pointsCount.textContent = `${state.optimizationPoints.length} puntos`;
+            });
+            actions.appendChild(btnCenter);
+            actions.appendChild(btnRemove);
+            row.appendChild(label);
+            row.appendChild(actions);
+            elements.pointsList.appendChild(row);
+          });
+          if (elements.pointsCount) elements.pointsCount.textContent = `${state.optimizationPoints.length} puntos`;
+        }
+
+        // expose helper functions so initialize() can restore markers after map init
+        elements.addOptimizationMarker = addOptimizationMarker;
+        elements.renderPointsList = renderPointsList;
+
+        function addOptimizationMarker(lat, lon) {
+          if (!map) return;
+          const marker = L.marker([lat, lon], { draggable: true }).addTo(map);
+          const idx = optimizationMarkers.length;
+          marker.bindPopup(`<div style="font-size:0.9em">${lat.toFixed(4)}, ${lon.toFixed(4)}<br/><button data-action="remove">Eliminar</button></div>`);
+          marker.on('popupopen', (e) => {
+            const btn = e.popup._contentNode.querySelector('[data-action="remove"]');
+            if (btn) btn.addEventListener('click', () => {
+              marker.remove();
+              const i = optimizationMarkers.indexOf(marker);
+                if (i >= 0) {
+                optimizationMarkers.splice(i, 1);
+                mutate((draft) => { draft.optimizationPoints.splice(i, 1); });
+                renderPointsList();
+              }
+            });
+          });
+          marker.on('dragend', () => {
+            const pos = marker.getLatLng();
+            const i = optimizationMarkers.indexOf(marker);
+            if (i >= 0) {
+              mutate((draft) => { draft.optimizationPoints[i] = { lat: pos.lat, lon: pos.lng }; });
+              renderPointsList();
+            }
+          });
+          optimizationMarkers.push(marker);
+        }
+
+        elements.btnDefinePoints.addEventListener('click', () => {
+          pointPickingActive = !pointPickingActive;
+          elements.btnDefinePoints.textContent = pointPickingActive ? 'Picking: Haz click en el mapa' : 'Definir puntos de control';
+          // Toggle visual state
+          if (pointPickingActive) elements.btnDefinePoints.classList.add('btn-picking'); else elements.btnDefinePoints.classList.remove('btn-picking');
+          if (pointPickingActive) {
+            // temporary hint
+            if (map && map._container) map._container.style.cursor = 'crosshair';
+          } else if (map && map._container) {
+            map._container.style.cursor = '';
+          }
+        });
+
+        // map click handler - add point when pick mode active
+        if (typeof map !== 'undefined' && map) {
+          map.on('click', (ev) => {
+            if (!pointPickingActive) return;
+            const { lat, lng } = ev.latlng;
+            mutate((draft) => { draft.optimizationPoints.push({ lat, lon: lng }); });
+            addOptimizationMarker(lat, lng);
+            renderPointsList();
+          });
+        }
+        // initial render if any
+        renderPointsList();
+      }
+
+      // Optimize design
+      if (elements.btnOptimize) {
+        elements.btnOptimize.addEventListener('click', async () => {
+          try {
+            if (!Array.isArray(state.time.timeline) || !state.time.timeline.length) {
+              await recomputeOrbit(true);
+            }
+            const timelineSeconds = state.time.timeline.slice();
+            const simDuration = Number(elements.simDuration?.value) || timelineSeconds[timelineSeconds.length - 1] || 3600;
+
+            const walker = require('walkerGenerator');
+            const engine = require('optimizationEngine');
+            const settings = state;
+
+            // Build initial constellation
+            let initialConstellation = [];
+            if (state.mode === 'constellation') {
+              const T = Number(elements.walkerT?.value) || 24;
+              const P = Number(elements.walkerP?.value) || 6;
+              const F = Number(elements.walkerF?.value) || 1;
+              const a = Number(state.orbital.semiMajor) || 6771;
+              const i = Number(state.orbital.inclination) || 53;
+              initialConstellation = walker.generateWalkerConstellation(T, P, F, a, i, Number(state.orbital.eccentricity) || 0);
+            } else {
+              // single satellite uses the current orbital element as a single-entry constellation
+              initialConstellation = [{
+                semiMajor: state.orbital.semiMajor,
+                eccentricity: state.orbital.eccentricity,
+                inclination: state.orbital.inclination,
+                raan: state.orbital.raan,
+                argPerigee: state.orbital.argPerigee,
+                meanAnomaly: state.orbital.meanAnomaly,
+              }];
+            }
+
+            // factory to compute positions for a candidate constellation
+            const constellationPositionsFactory = (constellation) => {
+              const result = { design: { satellites: [] } };
+              for (let s = 0; s < constellation.length; s += 1) {
+                const sat = constellation[s];
+                // build settings to propagate this satellite
+                const satSettings = {
+                  orbital: {
+                    semiMajor: sat.semiMajor,
+                    eccentricity: sat.eccentricity,
+                    inclination: sat.inclination,
+                    raan: sat.raan,
+                    argPerigee: sat.argPerigee,
+                    meanAnomaly: sat.meanAnomaly,
+                  },
+                  resonance: { enabled: false },
+                  samplesPerOrbit: state.samplesPerOrbit,
+                  time: { timeline: timelineSeconds },
+                  epoch: state.epoch,
+                };
+                const orbitRes = propagateOrbit(satSettings);
+                const timeline = orbitRes.dataPoints || [];
+                const satTimeline = timeline.map((pt) => ({ lat: pt.lat, lon: pt.lon, alt: pt.alt }));
+                result.design.satellites.push({ id: `s-${s}`, name: `sat-${s}`, timeline: satTimeline });
+              }
+              return result;
+            };
+
+            // non-blocking optimizer with progress and optional worker
+            if (elements.optStatus) elements.optStatus.textContent = 'Optimizando…';
+            if (elements.optProgress) { elements.optProgress.max = 1; elements.optProgress.value = 0; }
+            if (elements.btnCancelOptimize) { elements.btnCancelOptimize.style.display = 'inline-block'; }
+            let cancelRequested = false;
+            if (elements.btnCancelOptimize) elements.btnCancelOptimize.onclick = () => { cancelRequested = true; elements.optStatus.textContent = 'Cancelando…'; };
+
+            const useWorker = elements.workerToggle?.checked === true;
+            // helper to compute positions for a candidate constellation. If worker enabled, use worker; otherwise compute on main thread
+            async function positionsFactoryAsync(constellation) {
+              if (useWorker && window.Worker) {
+                // create worker and propagate satellites serially
+                return new Promise((resolve, reject) => {
+                    const workerCount = Math.max(1, Number(elements.workerCount?.value) || 1);
+                    const results = { design: { satellites: [] } };
+                    let completed = 0;
+                    // create layer for partial results
+                    let partialLayer = null;
+                    if (map) {
+                      try { partialLayer = L.layerGroup().addTo(map); } catch (e) { partialLayer = null; }
+                    }
+                    if (workerCount <= 1) {
+                      const worker = new Worker('/static/propagateWorker.js');
+                      worker.onmessage = (ev) => {
+                        const msg = ev.data || {};
+                        if (msg.type === 'progress') {
+                          if (elements.optProgress && msg.total) elements.optProgress.value = msg.done / msg.total;
+                          if (elements.optStatus) elements.optStatus.textContent = `Propagando sat ${msg.done}/${msg.total}`;
+                          return;
+                        }
+                        if (msg.type === 'result') {
+                          results.design.satellites.push({ id: msg.id, name: msg.name, timeline: msg.timeline });
+                          completed += 1;
+                          if (elements.optProgress && msg.total) elements.optProgress.value = completed / msg.total;
+                          // render partial result on map
+                          try {
+                            if (partialLayer && Array.isArray(msg.timeline) && msg.timeline.length) {
+                              const latlngs = msg.timeline.map((p) => [p.lat, p.lon]);
+                              const poly = L.polyline(latlngs, { color: '#7c3aed', weight: 1, opacity: 0.7 }).addTo(partialLayer);
+                              L.circleMarker(latlngs[0], { radius: 2, color: '#fff', fillColor: '#7c3aed', fillOpacity: 1 }).addTo(partialLayer);
+                            }
+                          } catch (e) { /* ignore rendering errors */ }
+                          if (completed >= (msg.total || constellation.length)) {
+                            worker.terminate();
+                            resolve(results);
+                          }
+                        }
+                        if (msg.type === 'error') {
+                          worker.terminate();
+                          if (partialLayer) partialLayer.clearLayers();
+                          reject(new Error(msg.message || 'Worker error'));
+                        }
+                      };
+                      worker.onerror = (err) => { worker.terminate(); if (partialLayer) partialLayer.clearLayers(); reject(err); };
+                      worker.postMessage({ type: 'propagateBatch', payload: { constellation, timeline: timelineSeconds, epoch: state.epoch } });
+                    } else {
+                      // split constellation into roughly equal chunks and spawn multiple workers
+                      const n = Math.min(workerCount, constellation.length);
+                      const chunkSize = Math.ceil(constellation.length / n);
+                      const workers = [];
+                      let pending = 0;
+                      for (let w = 0; w < n; w += 1) {
+                        const start = w * chunkSize;
+                        const end = Math.min(start + chunkSize, constellation.length);
+                        if (start >= end) continue;
+                        const subset = constellation.slice(start, end);
+                        pending += subset.length;
+                        const wk = new Worker('/static/propagateWorker.js');
+                        workers.push(wk);
+                        wk.onmessage = (ev) => {
+                          const msg = ev.data || {};
+                          if (msg.type === 'progress') {
+                            // aggregate progress crudely
+                            if (elements.optStatus) elements.optStatus.textContent = `Propagando sat ${msg.done}/${msg.total}`;
+                            return;
+                          }
+                          if (msg.type === 'result') {
+                            results.design.satellites.push({ id: msg.id, name: msg.name, timeline: msg.timeline });
+                            completed += 1;
+                            if (elements.optProgress && constellation.length) elements.optProgress.value = completed / constellation.length;
+                            // render partial
+                            try {
+                              if (partialLayer && Array.isArray(msg.timeline) && msg.timeline.length) {
+                                const latlngs = msg.timeline.map((p) => [p.lat, p.lon]);
+                                const poly = L.polyline(latlngs, { color: '#7c3aed', weight: 1, opacity: 0.65 }).addTo(partialLayer);
+                              }
+                            } catch (e) {}
+                            if (completed >= constellation.length) {
+                              // terminate all workers
+                              workers.forEach((x) => { try { x.terminate(); } catch (e) {} });
+                              resolve(results);
+                            }
+                          }
+                          if (msg.type === 'error') {
+                            workers.forEach((x) => { try { x.terminate(); } catch (e) {} });
+                            if (partialLayer) partialLayer.clearLayers();
+                            reject(new Error(msg.message || 'Worker error'));
+                          }
+                        };
+                        wk.onerror = (err) => { workers.forEach((x) => { try { x.terminate(); } catch (e) {} }); if (partialLayer) partialLayer.clearLayers(); reject(err); };
+                        wk.postMessage({ type: 'propagateBatch', payload: { constellation: subset, timeline: timelineSeconds, epoch: state.epoch } });
+                      }
+                    }
+                });
+              }
+              // fallback: synchronous factory
+              return new Promise((resolve) => {
+                const result = { design: { satellites: [] } };
+                for (let s = 0; s < constellation.length; s += 1) {
+                  if (cancelRequested) break;
+                  const sat = constellation[s];
+                  const satSettings = {
+                    orbital: {
+                      semiMajor: sat.semiMajor,
+                      eccentricity: sat.eccentricity,
+                      inclination: sat.inclination,
+                      raan: sat.raan,
+                      argPerigee: sat.argPerigee,
+                      meanAnomaly: sat.meanAnomaly,
+                    },
+                    resonance: { enabled: false },
+                    samplesPerOrbit: state.samplesPerOrbit,
+                    time: { timeline: timelineSeconds },
+                    epoch: state.epoch,
+                  };
+                  const orbitRes = propagateOrbit(satSettings);
+                  const tl = (orbitRes.dataPoints || []).map((pt) => ({ lat: pt.lat, lon: pt.lon, alt: pt.alt }));
+                  result.design.satellites.push({ id: `s-${s}`, name: `sat-${s}`, timeline: tl });
+                  if (elements.optProgress) elements.optProgress.value = (s + 1) / constellation.length;
+                }
+                resolve(result);
+              });
+            }
+
+            // batched iterative optimizer on main thread, yielding to UI every few iterations
+            const iterations = 80;
+            const batchSize = 5;
+            let best = initialConstellation.map((s) => ({ ...s }));
+            let bestPositions = await positionsFactoryAsync(best);
+            let bestScoreObj = engine.computeRevisitTime(bestPositions, state.optimizationPoints.length ? state.optimizationPoints : [{ lat: 0, lon: 0 }], timelineSeconds);
+            let bestScore = bestScoreObj.max;
+
+            for (let it = 0; it < iterations; it += 1) {
+              if (cancelRequested) break;
+              // mutate copy
+              const candidate = require('optimizationEngine').mutateConstellation(best, Math.max(0.1, 5 * (1 - it / iterations)));
+              const candidatePositions = await positionsFactoryAsync(candidate);
+              const scoreObj = engine.computeRevisitTime(candidatePositions, state.optimizationPoints.length ? state.optimizationPoints : [{ lat: 0, lon: 0 }], timelineSeconds);
+              const score = scoreObj.max;
+              if (Number.isFinite(score) && score < bestScore) {
+                best = candidate;
+                bestPositions = candidatePositions;
+                bestScoreObj = scoreObj;
+                bestScore = score;
+              }
+              if (elements.optProgress) elements.optProgress.value = (it + 1) / iterations;
+              if (elements.optStatus) elements.optStatus.textContent = `Iter ${it + 1}/${iterations} — best ${Math.round(bestScore)} s`;
+              // yield occasionally
+              if ((it % batchSize) === 0) await new Promise((r) => setTimeout(r, 10));
+            }
+
+            if (elements.btnCancelOptimize) elements.btnCancelOptimize.style.display = 'none';
+            if (cancelRequested) {
+              if (elements.optStatus) elements.optStatus.textContent = 'Optimización cancelada';
+              if (elements.optProgress) elements.optProgress.value = 0;
+              return;
+            }
+
+            // apply best constellation by visualizing its first satellite orbit and placing markers for each sat
+            if (Array.isArray(best) && best.length) {
+              const primary = best[0];
+              mutate((draft) => {
+                draft.orbital.semiMajor = primary.semiMajor;
+                draft.orbital.eccentricity = primary.eccentricity;
+                draft.orbital.inclination = primary.inclination;
+                draft.orbital.raan = primary.raan;
+                draft.orbital.argPerigee = primary.argPerigee;
+                draft.orbital.meanAnomaly = primary.meanAnomaly;
+              });
+              await recomputeOrbit(true);
+            }
+            if (elements.optStatus) elements.optStatus.textContent = `Done — max revisit ${Number.isFinite(bestScoreObj.max) ? Math.round(bestScoreObj.max) : '∞'} s, mean ${Number.isFinite(bestScoreObj.mean) ? Math.round(bestScoreObj.mean) : '∞'} s`;
+          } catch (err) {
+            console.error('Optimization failed', err);
+            if (elements.optStatus) elements.optStatus.textContent = 'Error during optimization';
+          }
+        });
+      }
 
       elements.panelResizer?.addEventListener('dblclick', () => {
         const collapsed = elements.controlPanel?.dataset.collapsed === 'true';
@@ -5907,6 +6495,16 @@
       cacheElements();
       initDefaults();
       initInfoButtons();
+      // create collapsible panels for each section (guarded)
+      try {
+        if (typeof createPanelAccordions === 'function') {
+          createPanelAccordions();
+        } else {
+          console.warn('createPanelAccordions not available');
+        }
+      } catch (e) {
+        console.warn('Error while initializing accordions', e);
+      }
       bindEvents();
       hasMapBeenFramed = false;
       hasSceneBeenFramed = false;
@@ -5914,6 +6512,25 @@
       mapInstance = initMap(elements.mapContainer);
       setBaseLayer(currentMapStyle);
       await initScene(elements.threeContainer);
+      // restore saved optimization points from localStorage
+      try {
+        const raw = localStorage.getItem('qkd:optimizationPoints');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length) {
+            mutate((draft) => { draft.optimizationPoints = parsed; });
+            // add markers for each point
+            if (elements.addOptimizationMarker) {
+              parsed.forEach((pt) => {
+                try { elements.addOptimizationMarker(pt.lat, pt.lon); } catch (e) { /* ignore */ }
+              });
+              if (elements.renderPointsList) elements.renderPointsList();
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Could not restore optimization points', err);
+      }
       initializeCharts();
       applyTheme(state.theme);
 
@@ -5921,6 +6538,19 @@
       refreshStationSelect();
       await recomputeOrbit(true);
       subscribe(onStateChange, false);
+      // persist optimization points on each state change (debounced-ish via animation frame)
+      let persistRaf = null;
+      subscribe(() => {
+        if (persistRaf) cancelAnimationFrame(persistRaf);
+        persistRaf = requestAnimationFrame(() => {
+          try {
+            const data = state.optimizationPoints || [];
+            localStorage.setItem('qkd:optimizationPoints', JSON.stringify(data));
+          } catch (e) {
+            console.warn('Could not persist optimization points', e);
+          }
+        });
+      }, false);
       playingRaf = requestAnimationFrame(playbackLoop);
       if (mapInstance) {
         setTimeout(() => invalidateMap(), 400);

@@ -355,6 +355,75 @@ body[data-variant] .panel-group {
   gap: 0.85rem;
 }
 
+/* Optimization panel visual improvements */
+.optimizer-panel {
+  padding: 0.9rem;
+  border-radius: 12px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 96%, transparent), var(--surface));
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.06);
+}
+
+.optimizer-panel h3 {
+  margin: 0 0 8px 0;
+  font-size: 1.05rem;
+  color: var(--text);
+}
+
+.control-points {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.points-list {
+  border: 1px dashed var(--border);
+  background: var(--surface-alt);
+  padding: 6px;
+  border-radius: 8px;
+}
+
+.points-list div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: background var(--transition);
+}
+.points-list div:hover { background: color-mix(in srgb, var(--accent-soft) 35%, transparent); }
+
+.points-list button { font-size: 0.85rem; padding: 4px 8px; }
+
+/* Primary / secondary button styles */
+.btn-primary {
+  background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 85%, black 8%));
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(79, 70, 229, 0.18);
+}
+.btn-primary:hover { filter: brightness(1.03); transform: translateY(-1px); }
+.btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+
+#optProgress { height: 10px; border-radius: 999px; overflow: hidden; appearance: none; }
+#optProgress::-webkit-progress-bar { background: var(--surface-alt); }
+#optProgress::-webkit-progress-value { background: linear-gradient(90deg, var(--accent), #7c3aed); box-shadow: 0 4px 14px rgba(124,58,237,0.18); }
+
+/* Make control panel a bit roomier */
+body[data-variant] .drawer-body { padding: 1.6rem; gap: 1rem; }
+body[data-variant] .drawer { border-radius: 16px; }
+
+/* Improve inputs and labels spacing */
+.field { gap: 0.55rem; }
+
+/* Make the define-points button visually toggled */
+.btn-picking { background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 70%, #fff), var(--accent)); color: #fff; }
+
+/* Responsive tweaks */
+@media (max-width: 960px) {
+  .points-list { max-height: 140px; }
+  .optimizer-panel { padding: 0.8rem; }
+}
+
 body[data-variant] .panel-group header h2 {
   margin: 0;
   font-size: 1.05rem;
@@ -728,6 +797,272 @@ body[data-variant="dashboard"] .workspace {
   gap: 1.5rem;
   padding: 1.5rem 2rem;
 }
+
+/* ==================================================================
+   UI Redesign Overrides - Palette, sidebar tabs, panel cards, timeline
+   This section intentionally comes last to override previous rules.
+   ================================================================== */
+
+:root {
+  /* New richer palette */
+  --bg: linear-gradient(180deg,#060814 0%, #081025 45%, #071226 100%);
+  --bg-solid: #071226;
+  --surface: rgba(255,255,255,0.03);
+  --surface-alt: rgba(255,255,255,0.02);
+  --panel-accent: rgba(124,58,237,0.08);
+  --accent: #7c3aed; /* purple */
+  --accent2: #08b6a8; /* teal */
+  --accent-contrast: #ffffff;
+  --text: #e6eef9;
+  --text-muted: #9fb0c9;
+  --muted-2: #6f8094;
+  --border: rgba(255,255,255,0.06);
+  --border-strong: rgba(255,255,255,0.09);
+  --glass: rgba(255,255,255,0.02);
+  --shadow-lg: 0 20px 50px rgba(2,6,23,0.6);
+  --radius-lg: 16px;
+  --radius-md: 12px;
+}
+
+body[data-theme="dark"] {
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Global tweaks */
+.app-header {
+  background: linear-gradient(90deg, rgba(10,14,28,0.6), rgba(6,10,20,0.45));
+  border-bottom: 1px solid var(--border);
+  padding: 14px 20px;
+}
+.brand h1 { font-size: 1.25rem; color: var(--accent-contrast); letter-spacing: -0.01em; }
+.brand p { margin: 0; color: var(--text-muted); font-size: 0.88rem; }
+
+/* Control panel redesign: narrower, glass card with vertical tabs */
+#controlPanel.control-panel {
+  width: 320px;
+  min-width: 280px;
+  max-width: 360px;
+  padding: 14px;
+  background: linear-gradient(180deg, rgba(8,12,24,0.55), rgba(8,10,18,0.5));
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.panel-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px;
+}
+.panel-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  font-weight: 600;
+}
+.panel-tabs button.is-active {
+  background: linear-gradient(90deg, rgba(124,58,237,0.16), rgba(8,182,168,0.06));
+  color: var(--accent-contrast);
+  border: 1px solid rgba(124,58,237,0.18);
+  box-shadow: 0 8px 24px rgba(124,58,237,0.08);
+}
+.panel-tabs button::before {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.02);
+  color: var(--accent);
+  font-size: 16px;
+  content: '';
+}
+/* section icons via attribute selectors */
+.panel-tabs button[data-section-target="orbit"]::before {
+  content: '';
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='9' fill='%237c3aed'/><circle cx='18' cy='6' r='1.6' fill='%23ffffff'/></svg>");
+  background-size: 20px 20px; background-repeat: no-repeat; background-position: center;
+}
+.panel-tabs button[data-section-target="optics"]::before {
+  content: '';
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='3' y='10' width='12' height='6' rx='2' fill='%2308b6a8'/><circle cx='17' cy='13' r='3' fill='%23ffffff'/></svg>");
+  background-size: 20px 20px; background-repeat: no-repeat; background-position: center;
+}
+.panel-tabs button[data-section-target="stations"]::before {
+  content: '';
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 3 L12 9' stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round'/><circle cx='12' cy='15' r='3' fill='%237c3aed'/></svg>");
+  background-size: 20px 20px; background-repeat: no-repeat; background-position: center;
+}
+.panel-tabs button[data-section-target="analytics"]::before {
+  content: '';
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='3' y='6' width='3' height='12' fill='%23ffffff'/><rect x='9' y='9' width='3' height='9' fill='%237c3aed'/><rect x='15' y='3' width='3' height='15' fill='%2308b6a8'/></svg>");
+  background-size: 20px 20px; background-repeat: no-repeat; background-position: center;
+}
+.panel-tabs button[data-section-target="weather"]::before {
+  content: '';
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M5 15a4 4 0 0 1 0-8 6 6 0 0 1 11 1 3.5 3.5 0 0 1-1 6H6z' fill='%23ffffff'/></svg>");
+  background-size: 20px 20px; background-repeat: no-repeat; background-position: center;
+}
+.panel-tabs button[data-section-target="atmosphere"]::before {
+  content: '';
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><g fill='%23ffffff' opacity='0.9'><circle cx='6' cy='12' r='1.2'/><circle cx='11' cy='12' r='1.2'/><circle cx='16' cy='12' r='1.2'/></g></svg>");
+  background-size: 20px 20px; background-repeat: no-repeat; background-position: center;
+}
+
+/* Make panel content scrollable and card-like */
+.panel-content { overflow: auto; padding: 8px 2px 8px 2px; }
+.panel-section {
+  background: linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0.01));
+  border: 1px solid var(--border);
+  padding: 12px;
+  border-radius: 12px;
+  margin-bottom: 10px;
+}
+.panel-section header h2 { color: var(--accent-contrast); margin-bottom: 6px; }
+.panel-section header p { color: var(--text-muted); margin-bottom: 10px; }
+
+/* Fields: more compact modern look */
+.field { gap: 6px; }
+label { color: var(--text-muted); font-weight: 600; }
+input, select, textarea { background: rgba(255,255,255,0.02); border: 1px solid var(--border); color: var(--text); }
+
+/* Buttons */
+.btn-primary {
+  background: linear-gradient(90deg,var(--accent), #5b21b6);
+  color: var(--accent-contrast);
+  padding: 10px 14px;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(124,58,237,0.12);
+}
+.btn-secondary { background: transparent; color: var(--text-muted); border: 1px solid rgba(255,255,255,0.03); padding: 9px 12px; border-radius: 10px; }
+.ghost { background: transparent; color: var(--text-muted); border: 1px solid transparent; }
+
+/* Optimization progress accent */
+#optProgress::-webkit-progress-value { background: linear-gradient(90deg, var(--accent2), var(--accent)); }
+#optProgress { height: 12px; border-radius: 999px; }
+
+/* View area and panels */
+.visual-area { padding: 18px; display:flex; flex-direction:column; gap:12px; }
+.view-grid { display: grid; grid-template-columns: 1fr 420px; gap: 12px; align-items: stretch; }
+.view-pane { border-radius: 14px; overflow: hidden; border: 1px solid rgba(255,255,255,0.03); background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(0,0,0,0.02)); }
+#threeContainer { min-height: 420px; background: radial-gradient(ellipse at 30% 20%, rgba(124,58,237,0.06), rgba(0,0,0,0.6)); }
+#mapContainer { min-height: 420px; background: linear-gradient(180deg, rgba(0,0,0,0.02), rgba(0,0,0,0.04)); }
+
+/* Constellation list card */
+.constellation-controls { background: transparent; margin-bottom: 6px; }
+.constellation-controls h3 { color: var(--accent-contrast); margin: 0 0 6px 0; }
+
+/* Timeline: sleeker */
+.timeline { padding: 10px; background: linear-gradient(90deg, rgba(255,255,255,0.01), rgba(255,255,255,0.01)); border-radius: 12px; border: 1px solid rgba(255,255,255,0.03); }
+.timeline-header strong { color: var(--accent-contrast); }
+.timeline-actions button { background: rgba(255,255,255,0.02); border-radius: 8px; padding: 8px; color: var(--text-muted); }
+.timeline input[type=range] { height: 8px; background: linear-gradient(90deg, rgba(124,58,237,0.12), rgba(8,182,168,0.08)); border-radius: 999px; }
+
+/* Dialogs: glassy */
+dialog .dialog-content { background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border: 1px solid rgba(255,255,255,0.04); }
+
+/* Small helpers */
+.hint { color: var(--muted-2); font-size: 0.88rem; }
+.metric-label { color: var(--muted-2); }
+
+/* Responsive adjustments */
+@media (max-width: 1100px) {
+  .view-grid { grid-template-columns: 1fr; }
+  #controlPanel.control-panel { width: 100%; min-width: auto; max-width: none; }
+}
+
+/* Compact vertical nav: icon-only by default, expands on hover */
+#controlPanel.control-panel {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.panel-tabs {
+  flex: 0 0 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+  transition: width 220ms ease;
+  width: 72px;
+  padding: 8px;
+}
+.panel-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+  padding: 10px 10px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.panel-tabs .tab-label {
+  margin-left: 8px;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+/* hide labels by default visually but keep accessible via aria-label */
+.panel-tabs .tab-label { opacity: 0; transform: translateX(-6px); pointer-events: none; }
+.panel-tabs:hover { width: 220px; }
+.panel-tabs:hover .tab-label { opacity: 1; transform: translateX(0); pointer-events: auto; color: var(--text); }
+
+/* panel-content becomes the flexible scrollable column */
+.panel-content {
+  flex: 1 1 auto;
+  max-height: calc(100vh - 110px);
+  overflow: auto;
+  padding: 6px 0 8px 0;
+}
+
+/* reduce vertical spacing inside panel-sections for compactness */
+.panel-section { padding: 10px; margin-bottom: 8px; }
+
+/* When control panel is collapsed (small screens or explicit) make tabs full width */
+@media (max-width: 720px) {
+  .panel-tabs { width: 100%; flex-direction: row; overflow-x: auto; }
+  .panel-tabs button { justify-content: center; }
+  .panel-tabs .tab-label { opacity: 1; transform: none; }
+  #controlPanel.control-panel { flex-direction: column; }
+  .panel-content { max-height: none; }
+}
+
+/* When the workspace has panel collapsed, expand the view area to full width
+   and keep a compact icon rail visible for quick access */
+.workspace.panel-collapsed .control-panel {
+  position: absolute;
+  left: 12px;
+  top: 84px;
+  width: 72px;
+  max-width: 72px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  border-radius: 12px;
+  padding: 8px;
+  z-index: 40;
+}
+.workspace.panel-collapsed .panel-content { display: none; }
+.workspace.panel-collapsed .view-grid { grid-template-columns: 1fr; margin-left: 0; }
+.workspace.panel-collapsed .panel-tabs { width: 72px; }
+.workspace.panel-collapsed .panel-tabs .tab-label { display: none; }
+
+/* Help content styling */
+.help-nav { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+.help-nav button { padding:8px 10px; border-radius:8px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.03); color:var(--text); }
+.help-content { background: rgba(255,255,255,0.01); padding:10px; border-radius:8px; }
+.help-content article { display:block; margin-bottom:12px; }
+.help-content article h3 { margin-top:0; color:var(--accent-contrast); }
+
+
 
 body[data-variant="dashboard"] .workspace.is-primary-collapsed {
   grid-template-columns: minmax(70px, 0.25fr) minmax(500px, 1fr);
