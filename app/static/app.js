@@ -4716,6 +4716,7 @@
       elements.panelSections.forEach((section) => {
         const active = section.dataset.section === target;
         section.classList.toggle('is-active', active);
+        section.classList.toggle('active', active);
         section.hidden = !active;
       });
       elements.panelTabs?.forEach((tab) => {
@@ -5217,6 +5218,31 @@
           activatePanelSection(tab.dataset.sectionTarget);
         });
       });
+
+      // New sidebar navigation handling
+      const sidebarNavItems = document.querySelectorAll('.sidebar .nav-item[data-section]');
+      sidebarNavItems.forEach((item) => {
+        item.addEventListener('click', () => {
+          const section = item.dataset.section;
+          if (section) {
+            // Update active nav item
+            sidebarNavItems.forEach(nav => nav.classList.remove('active'));
+            item.classList.add('active');
+            // Switch panel section
+            activatePanelSection(section);
+          }
+        });
+      });
+
+      // Sidebar toggle functionality
+      const sidebarToggle = document.getElementById('sidebarToggle');
+      const sidebar = document.getElementById('sidebar');
+      if (sidebarToggle && sidebar) {
+        sidebarToggle.addEventListener('click', () => {
+          sidebar.classList.toggle('collapsed');
+        });
+      }
+
 
       // Wire help nav buttons (show corresponding help article)
       try {
