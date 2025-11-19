@@ -24,6 +24,106 @@
     const RAD2DEG = 180 / Math.PI;
     const TWO_PI = Math.PI * 2;
 
+    // Enhanced error logging and checkpoint system
+    const LOG_LEVELS = {
+      DEBUG: 0,
+      INFO: 1,
+      WARN: 2,
+      ERROR: 3,
+      CHECKPOINT: 4
+    };
+
+    let currentLogLevel = LOG_LEVELS.INFO;
+
+    function setLogLevel(level) {
+      currentLogLevel = LOG_LEVELS[level] || LOG_LEVELS.INFO;
+    }
+
+    function logCheckpoint(message, data = null) {
+      if (currentLogLevel <= LOG_LEVELS.CHECKPOINT) {
+        console.log(`%c[CHECKPOINT]%c ${message}`, 
+          'background: #4fd1ff; color: #000; padding: 2px 6px; border-radius: 3px; font-weight: bold',
+          'color: #4fd1ff',
+          data || '');
+      }
+    }
+
+    function logError(context, error, additionalData = null) {
+      if (currentLogLevel <= LOG_LEVELS.ERROR) {
+        console.error(`%c[ERROR]%c ${context}:`, 
+          'background: #ff4d4d; color: #fff; padding: 2px 6px; border-radius: 3px; font-weight: bold',
+          'color: #ff4d4d',
+          error);
+        if (additionalData) {
+          console.error('Additional data:', additionalData);
+        }
+        console.trace('Stack trace:');
+      }
+    }
+
+    function logWarning(message, data = null) {
+      if (currentLogLevel <= LOG_LEVELS.WARN) {
+        console.warn(`%c[WARN]%c ${message}`, 
+          'background: #ffa500; color: #000; padding: 2px 6px; border-radius: 3px; font-weight: bold',
+          'color: #ffa500',
+          data || '');
+      }
+    }
+
+    function logInfo(message, data = null) {
+      if (currentLogLevel <= LOG_LEVELS.INFO) {
+        console.log(`%c[INFO]%c ${message}`, 
+          'background: #4f46e5; color: #fff; padding: 2px 6px; border-radius: 3px; font-weight: bold',
+          'color: #4f46e5',
+          data || '');
+      }
+    }
+
+    async function safeFetch(url, options = {}, context = 'API call') {
+      logCheckpoint(`Starting fetch: ${context}`, { url, options });
+      try {
+        const response = await fetch(url, options);
+        logCheckpoint(`Fetch response received: ${context}`, { 
+          status: response.status, 
+          ok: response.ok 
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => 'Unable to read error response');
+          const error = new Error(`HTTP ${response.status}: ${response.statusText}`);
+          error.response = response;
+          error.body = errorText;
+          throw error;
+        }
+        
+        return response;
+      } catch (error) {
+        logError(context, error, { url, options });
+        throw error;
+      }
+    }
+
+    function validateNumber(value, min = -Infinity, max = Infinity, paramName = 'value') {
+      const num = Number(value);
+      if (!isFinite(num)) {
+        logWarning(`Invalid number for ${paramName}: ${value}`);
+        return null;
+      }
+      if (num < min || num > max) {
+        logWarning(`${paramName} out of range [${min}, ${max}]: ${num}`);
+        return null;
+      }
+      return num;
+    }
+
+    function validateRequired(value, paramName = 'value') {
+      if (value === null || value === undefined || value === '') {
+        logWarning(`Required parameter missing: ${paramName}`);
+        return false;
+      }
+      return true;
+    }
+
     function clamp(value, min, max) {
       return Math.max(min, Math.min(max, value));
     }
@@ -107,7 +207,15 @@
       return smoothed;
     }
 
-    module.exports = { DEG2RAD, RAD2DEG, TWO_PI, clamp, lerp, formatDistanceKm, formatAngle, formatLoss, formatDuration, formatDoppler, isoNowLocal, haversineDistance, smoothArray };
+    module.exports = { 
+      DEG2RAD, RAD2DEG, TWO_PI, 
+      clamp, lerp, 
+      formatDistanceKm, formatAngle, formatLoss, formatDuration, formatDoppler, 
+      isoNowLocal, haversineDistance, smoothArray,
+      // Error handling and logging
+      logCheckpoint, logError, logWarning, logInfo, setLogLevel,
+      safeFetch, validateNumber, validateRequired
+    };
 
   });
   define('j2Propagator', (exports, module) => {
@@ -258,6 +366,255 @@
 
     module.exports = { computeRevisitTime, mutateConstellation, optimizeConstellation };
   });
+
+  // QKD Calculations Module - Cosmica-inspired implementation
+  define('qkdCalculations', (exports, module) => {
+    const { logCheckpoint, logError, validateNumber } = require('utils');
+    
+    // Physical constants
+    const H_PLANCK = 6.62607015e-34; // J⋅s
+    const C_LIGHT = 2.99792458e8;     // m/s
+    
+    /**
+     * Calculate secure key rate for BB84 protocol
+     * @param {Object} params - QKD parameters
+     * @returns {Object} QKD performance metrics
+     */
+    function calculateBB84Performance(params) {
+      logCheckpoint('Calculating BB84 QKD performance', params);
+      
+      try {
+        // Validate inputs
+        const photonRate = validateNumber(params.photonRate, 0, 1e12, 'photonRate');
+        const channelLossdB = validateNumber(params.channelLossdB, 0, 100, 'channelLossdB');
+        const detectorEff = validateNumber(params.detectorEfficiency, 0, 1, 'detectorEfficiency');
+        const darkCountRate = validateNumber(params.darkCountRate, 0, 1e6, 'darkCountRate');
+        
+        if (!photonRate || channelLossdB === null || !detectorEff || darkCountRate === null) {
+          throw new Error('Invalid input parameters for QKD calculation');
+        }
+        
+        // Convert channel loss from dB to linear transmittance
+        const channelTransmittance = Math.pow(10, -channelLossdB / 10);
+        logCheckpoint('Channel transmittance', channelTransmittance);
+        
+        // Calculate detection rate
+        const mu = 0.5; // Mean photon number per pulse for weak coherent pulses
+        const detectionRate = photonRate * channelTransmittance * detectorEff * Math.exp(-mu);
+        
+        // Calculate noise contributions
+        const backgroundRate = darkCountRate;
+        const totalNoiseRate = backgroundRate;
+        
+        // Calculate QBER (Quantum Bit Error Rate)
+        const signalRate = detectionRate;
+        const errorRate = totalNoiseRate / 2; // Noise causes 50% errors
+        const qber = errorRate / (signalRate + errorRate);
+        
+        logCheckpoint('QBER calculated', qber);
+        
+        // Sifting efficiency for BB84 (after basis reconciliation)
+        const siftingEfficiency = 0.5;
+        const siftedKeyRate = (signalRate + errorRate) * siftingEfficiency;
+        
+        // Shannon entropy function
+        const h = (x) => {
+          if (x <= 0 || x >= 1) return 0;
+          return -x * Math.log2(x) - (1 - x) * Math.log2(1 - x);
+        };
+        
+        // Secure key rate using simplified formula
+        // R_secure = R_sifted * [1 - h(QBER)] - leakage_EC
+        // Where leakage_EC ≈ 1.16 * h(QBER) * R_sifted for practical error correction
+        const informationReconciliationEfficiency = 1.16;
+        const privacyAmplificationCost = h(qber) * siftedKeyRate;
+        const errorCorrectionLeakage = informationReconciliationEfficiency * h(qber) * siftedKeyRate;
+        
+        let secureKeyRate = siftedKeyRate - privacyAmplificationCost - errorCorrectionLeakage;
+        
+        // Apply QBER threshold (typically ~11% for BB84)
+        const qberThreshold = 0.11;
+        if (qber > qberThreshold) {
+          secureKeyRate = 0;
+          logCheckpoint('QBER exceeds threshold, secure key rate = 0');
+        }
+        
+        // Ensure non-negative
+        secureKeyRate = Math.max(0, secureKeyRate);
+        
+        return {
+          qber: qber * 100, // Convert to percentage
+          rawKeyRate: siftedKeyRate / 1000, // Convert to kbps
+          secureKeyRate: secureKeyRate / 1000, // Convert to kbps
+          channelTransmittance: channelTransmittance,
+          detectionRate: detectionRate,
+          siftedKeyRate: siftedKeyRate,
+          protocol: 'BB84'
+        };
+      } catch (error) {
+        logError('BB84 calculation failed', error, params);
+        return {
+          qber: null,
+          rawKeyRate: null,
+          secureKeyRate: null,
+          channelTransmittance: null,
+          error: error.message
+        };
+      }
+    }
+    
+    /**
+     * Calculate secure key rate for E91 protocol (entanglement-based)
+     * @param {Object} params - QKD parameters
+     * @returns {Object} QKD performance metrics
+     */
+    function calculateE91Performance(params) {
+      logCheckpoint('Calculating E91 QKD performance', params);
+      
+      try {
+        // Validate inputs
+        const pairRate = validateNumber(params.photonRate / 2, 0, 1e12, 'pairRate'); // Entangled pairs
+        const channelLossdB = validateNumber(params.channelLossdB, 0, 100, 'channelLossdB');
+        const detectorEff = validateNumber(params.detectorEfficiency, 0, 1, 'detectorEfficiency');
+        const darkCountRate = validateNumber(params.darkCountRate, 0, 1e6, 'darkCountRate');
+        
+        if (!pairRate || channelLossdB === null || !detectorEff || darkCountRate === null) {
+          throw new Error('Invalid input parameters for E91 calculation');
+        }
+        
+        // Convert channel loss
+        const channelTransmittance = Math.pow(10, -channelLossdB / 10);
+        
+        // E91 requires coincidence detection on both sides
+        // Simplified model: both photons must be detected
+        const coincidenceRate = pairRate * Math.pow(channelTransmittance * detectorEff, 2);
+        
+        // Calculate QBER from dark counts and accidental coincidences
+        const accidentalRate = darkCountRate * darkCountRate / (pairRate || 1);
+        const qber = accidentalRate / (coincidenceRate + accidentalRate);
+        
+        logCheckpoint('E91 QBER calculated', qber);
+        
+        // Secure key rate for entanglement-based QKD
+        const h = (x) => {
+          if (x <= 0 || x >= 1) return 0;
+          return -x * Math.log2(x) - (1 - x) * Math.log2(1 - x);
+        };
+        
+        let secureKeyRate = coincidenceRate * (1 - 2 * h(qber));
+        
+        // QBER threshold for E91 (can tolerate slightly higher QBER)
+        const qberThreshold = 0.15;
+        if (qber > qberThreshold) {
+          secureKeyRate = 0;
+        }
+        
+        secureKeyRate = Math.max(0, secureKeyRate);
+        
+        return {
+          qber: qber * 100,
+          rawKeyRate: coincidenceRate / 1000,
+          secureKeyRate: secureKeyRate / 1000,
+          channelTransmittance: channelTransmittance,
+          detectionRate: coincidenceRate,
+          protocol: 'E91'
+        };
+      } catch (error) {
+        logError('E91 calculation failed', error, params);
+        return {
+          qber: null,
+          rawKeyRate: null,
+          secureKeyRate: null,
+          channelTransmittance: null,
+          error: error.message
+        };
+      }
+    }
+    
+    /**
+     * Calculate continuous variable QKD performance
+     * @param {Object} params - QKD parameters
+     * @returns {Object} QKD performance metrics
+     */
+    function calculateCVQKDPerformance(params) {
+      logCheckpoint('Calculating CV-QKD performance', params);
+      
+      try {
+        const modulationVariance = 10; // Shot noise units
+        const channelLossdB = validateNumber(params.channelLossdB, 0, 100, 'channelLossdB');
+        const detectorEff = validateNumber(params.detectorEfficiency, 0, 1, 'detectorEfficiency');
+        const electronicNoise = 0.01; // Normalized electronic noise
+        
+        if (channelLossdB === null || !detectorEff) {
+          throw new Error('Invalid input parameters for CV-QKD calculation');
+        }
+        
+        const channelTransmittance = Math.pow(10, -channelLossdB / 10);
+        const totalTransmittance = channelTransmittance * detectorEff;
+        
+        // Simplified CV-QKD rate formula
+        // R ∝ log2(1 + SNR) - log2(1 + noise/signal)
+        const snr = totalTransmittance * modulationVariance / (1 + electronicNoise);
+        const excessNoise = electronicNoise / totalTransmittance;
+        
+        const symbolRate = 100e6; // 100 MHz symbol rate (example)
+        let secureKeyRate = symbolRate * Math.max(0, Math.log2(1 + snr) - Math.log2(1 + excessNoise));
+        
+        // CV-QKD typically has lower QBER but is more sensitive to loss
+        const effectiveQBER = excessNoise / (snr + excessNoise);
+        
+        return {
+          qber: effectiveQBER * 100,
+          rawKeyRate: symbolRate / 1000,
+          secureKeyRate: secureKeyRate / 1000,
+          channelTransmittance: channelTransmittance,
+          snr: snr,
+          protocol: 'CV-QKD'
+        };
+      } catch (error) {
+        logError('CV-QKD calculation failed', error, params);
+        return {
+          qber: null,
+          rawKeyRate: null,
+          secureKeyRate: null,
+          channelTransmittance: null,
+          error: error.message
+        };
+      }
+    }
+    
+    /**
+     * Main QKD performance calculator - routes to appropriate protocol
+     * @param {string} protocol - QKD protocol ('bb84', 'e91', 'cv-qkd')
+     * @param {Object} params - QKD and link parameters
+     * @returns {Object} QKD performance metrics
+     */
+    function calculateQKDPerformance(protocol, params) {
+      logCheckpoint(`Calculating QKD performance for protocol: ${protocol}`, params);
+      
+      switch (protocol.toLowerCase()) {
+        case 'bb84':
+          return calculateBB84Performance(params);
+        case 'e91':
+          return calculateE91Performance(params);
+        case 'cv-qkd':
+          return calculateCVQKDPerformance(params);
+        default:
+          logError('Unknown QKD protocol', new Error(`Protocol ${protocol} not supported`));
+          return {
+            error: `Unknown protocol: ${protocol}`
+          };
+      }
+    }
+    
+    module.exports = {
+      calculateQKDPerformance,
+      calculateBB84Performance,
+      calculateE91Performance,
+      calculateCVQKDPerformance
+    };
+  });
+
   define('state', (exports, module) => {
     const { isoNowLocal } = require('utils');
 
@@ -4114,6 +4471,10 @@
         'constellationControls', 'constellationList', 'constellationStatus',
         'modeIndividual', 'modeConstellation', 'walkerPanel', 'walkerT', 'walkerP', 'walkerF',
         'btnDefinePoints', 'btnOptimize', 'btnCancelOptimize', 'simDuration', 'pointsCount', 'optStatus', 'pointsList', 'optProgress', 'workerToggle', 'workerCount',
+        // QKD elements
+        'qkdProtocol', 'photonRate', 'photonRateSlider', 'detectorEfficiency', 'detectorEfficiencySlider',
+        'darkCountRate', 'darkCountRateSlider', 'opticalFilterBandwidth', 'opticalFilterBandwidthSlider',
+        'btnCalculateQKD', 'qkdStatus', 'qberMetric', 'rawKeyRateMetric', 'secureKeyRateMetric', 'channelTransmittanceMetric',
       ];
       ids.forEach((id) => {
         elements[id] = document.getElementById(id);
@@ -5389,6 +5750,96 @@
         clearWeatherField();
         lastWeatherSignature = '';
         setWeatherStatus('Overlay cleared');
+      });
+
+      // QKD Calculate button handler
+      elements.btnCalculateQKD?.addEventListener('click', () => {
+        logCheckpoint('QKD Calculate button clicked');
+        try {
+          const { logInfo, validateNumber } = require('utils');
+          const { calculateQKDPerformance } = require('qkdCalculations');
+          
+          // Get current link loss from computed metrics
+          const currentLoss = state.computed?.linkLoss || 0;
+          
+          // Get QKD parameters from UI
+          const protocol = elements.qkdProtocol?.value || 'bb84';
+          const photonRate = validateNumber(elements.photonRate?.value, 1, 1000, 'photonRate') * 1e6 || 100e6; // Convert MHz to Hz
+          const detectorEfficiency = validateNumber(elements.detectorEfficiency?.value, 0, 1, 'detectorEfficiency') || 0.65;
+          const darkCountRate = validateNumber(elements.darkCountRate?.value, 0, 10000, 'darkCountRate') || 100;
+          
+          if (!photonRate || !detectorEfficiency || darkCountRate === null) {
+            const statusEl = document.getElementById('qkdStatus');
+            if (statusEl) statusEl.textContent = 'Error: Invalid input parameters';
+            logError('QKD calculation', new Error('Invalid parameters'));
+            return;
+          }
+          
+          logInfo('QKD parameters collected', { protocol, photonRate, detectorEfficiency, darkCountRate, currentLoss });
+          
+          // Calculate QKD performance
+          const results = calculateQKDPerformance(protocol, {
+            photonRate: photonRate,
+            channelLossdB: currentLoss,
+            detectorEfficiency: detectorEfficiency,
+            darkCountRate: darkCountRate
+          });
+          
+          logCheckpoint('QKD results calculated', results);
+          
+          // Update UI with results
+          const qberEl = document.getElementById('qberMetric');
+          const rawKeyRateEl = document.getElementById('rawKeyRateMetric');
+          const secureKeyRateEl = document.getElementById('secureKeyRateMetric');
+          const channelTransEl = document.getElementById('channelTransmittanceMetric');
+          
+          if (results.error) {
+            const statusEl = document.getElementById('qkdStatus');
+            if (statusEl) statusEl.textContent = `Error: ${results.error}`;
+            if (qberEl) qberEl.textContent = '--';
+            if (rawKeyRateEl) rawKeyRateEl.textContent = '--';
+            if (secureKeyRateEl) secureKeyRateEl.textContent = '--';
+            if (channelTransEl) channelTransEl.textContent = '--';
+            return;
+          }
+          
+          // Format and display results
+          if (qberEl) qberEl.textContent = results.qber !== null ? results.qber.toFixed(2) + '%' : '--';
+          if (rawKeyRateEl) rawKeyRateEl.textContent = results.rawKeyRate !== null ? results.rawKeyRate.toFixed(2) + ' kbps' : '--';
+          if (secureKeyRateEl) {
+            const rateText = results.secureKeyRate !== null ? results.secureKeyRate.toFixed(2) : '--';
+            secureKeyRateEl.textContent = rateText + ' kbps';
+            // Color code based on performance
+            if (results.secureKeyRate > 0) {
+              secureKeyRateEl.style.color = 'var(--accent-tertiary)';
+            } else {
+              secureKeyRateEl.style.color = 'var(--text-muted)';
+            }
+          }
+          if (channelTransEl) {
+            const transText = results.channelTransmittance !== null ? 
+              (results.channelTransmittance * 100).toFixed(4) + '%' : '--';
+            channelTransEl.textContent = transText;
+          }
+          
+          // Update status
+          const statusEl = document.getElementById('qkdStatus');
+          if (statusEl) {
+            if (results.secureKeyRate > 0) {
+              statusEl.textContent = `✓ QKD link established with ${results.protocol} protocol`;
+              statusEl.style.color = 'var(--accent-tertiary)';
+            } else {
+              statusEl.textContent = `✗ QBER too high for secure key generation (${results.qber.toFixed(2)}%)`;
+              statusEl.style.color = 'var(--text-muted)';
+            }
+          }
+          
+          logInfo('QKD UI updated successfully', results);
+        } catch (error) {
+          logError('QKD calculation failed', error);
+          const statusEl = document.getElementById('qkdStatus');
+          if (statusEl) statusEl.textContent = 'Calculation error - check console for details';
+        }
       });
 
       elements.constellationList?.addEventListener('change', (event) => {
