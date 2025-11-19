@@ -1,6 +1,9 @@
 :root {
   color-scheme: light dark;
   --font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-futuristic: 'Orbitron', 'Inter', system-ui, sans-serif;
+  
+  /* Light theme colors (fallback) */
   --bg: #f5f7fb;
   --surface: #ffffff;
   --surface-alt: #eef1f9;
@@ -11,43 +14,94 @@
   --accent: #4f46e5;
   --accent-soft: rgba(79, 70, 229, 0.12);
   --shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
-  --radius-lg: 20px;
-  --radius-md: 14px;
-  --radius-sm: 10px;
-  --transition: 200ms ease;
+  
+  /* Spacing system - improved with better increments */
+  --space-xs: 0.25rem;  /* 4px */
+  --space-sm: 0.5rem;   /* 8px */
+  --space-md: 1rem;     /* 16px */
+  --space-lg: 1.5rem;   /* 24px */
+  --space-xl: 2rem;     /* 32px */
+  --space-2xl: 3rem;    /* 48px */
+  
+  /* Radius system */
+  --radius-sm: 0.375rem;  /* 6px */
+  --radius-md: 0.5rem;    /* 8px */
+  --radius-lg: 0.75rem;   /* 12px */
+  --radius-xl: 1rem;      /* 16px */
+  
+  /* Transition system */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Dark theme - Futuristic Cyberpunk Style */
 body[data-theme="dark"] {
-  --bg: #0f1729;
-  --surface: #141c2f;
-  --surface-alt: #1d2537;
-  --border: rgba(148, 163, 184, 0.24);
-  --border-strong: rgba(148, 163, 184, 0.4);
-  --text: #f8fafc;
+  --bg: #0a0e27;
+  --bg-gradient: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
+  --surface: #13172b;
+  --surface-alt: #1a1f3a;
+  --surface-elevated: #242945;
+  --border: rgba(79, 209, 255, 0.15);
+  --border-strong: rgba(79, 209, 255, 0.3);
+  --border-accent: rgba(138, 43, 226, 0.4);
+  --text: #e2e8f0;
   --text-muted: #94a3b8;
-  --accent-soft: rgba(79, 70, 229, 0.22);
-  --shadow: 0 20px 50px rgba(2, 6, 23, 0.45);
+  --text-dim: #64748b;
+  --accent: #4fd1ff;
+  --accent-secondary: #8a2be2;
+  --accent-tertiary: #00ff88;
+  --accent-soft: rgba(79, 209, 255, 0.15);
+  --accent-glow: 0 0 20px rgba(79, 209, 255, 0.3);
+  --shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 25px 60px rgba(0, 0, 0, 0.8);
 }
 
 * {
   box-sizing: border-box;
 }
 
-/* 1. Forzar a que la página ocupe el 100% de la ventana SIN SCROLL */
+/* Remove Spanish comment and improve body styles */
 html,
 body {
   height: 100vh;
-  overflow: hidden; /* ¡LA CLAVE! Esto detiene el scroll de la página */
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  margin: 0;
   font-family: var(--font-family);
   background: var(--bg);
   color: var(--text);
   display: flex;
   flex-direction: column;
   height: 100vh;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Apply futuristic font to headers */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-futuristic);
+  font-weight: 600;
+  line-height: 1.2;
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+/* Improved header spacing */
+h1 { font-size: 1.875rem; margin-bottom: var(--space-md); }
+h2 { font-size: 1.5rem; margin-bottom: var(--space-sm); }
+h3 { font-size: 1.25rem; margin-bottom: var(--space-sm); }
+h4 { font-size: 1.125rem; margin-bottom: var(--space-xs); }
+
+/* Add glow effect to headers in dark theme */
+body[data-theme="dark"] h1,
+body[data-theme="dark"] h2 {
+  text-shadow: 0 0 10px rgba(79, 209, 255, 0.3);
+}
 }
 
 a {
@@ -2328,5 +2382,532 @@ input[type="range"] {
   .panel-reveal {
     left: 50%;
     transform: translateX(-50%);
+  }
+}
+
+/* ==================================================================
+   ENHANCED STYLES FOR RESTRUCTURED INTERFACE
+   ================================================================== */
+
+/* Improved Form Spacing */
+.field {
+  margin-bottom: var(--space-md);
+}
+
+.field-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-xs);
+  font-weight: 500;
+  font-size: 0.875rem;
+  color: var(--text);
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-xl);
+}
+
+.field-group-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+/* Info Messages and Boxes */
+.info-message,
+.info-box {
+  padding: var(--space-md);
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-lg);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+body[data-theme="dark"] .info-message,
+body[data-theme="dark"] .info-box {
+  background: rgba(79, 209, 255, 0.08);
+  border-color: var(--border-strong);
+  box-shadow: inset 0 0 20px rgba(79, 209, 255, 0.05);
+}
+
+/* QKD Metrics Grid - Enhanced */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-md);
+  margin: var(--space-lg) 0;
+}
+
+.metric-card,
+.metric-box {
+  padding: var(--space-md);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  transition: all var(--transition-base);
+}
+
+.metric-card:hover,
+.metric-box:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+body[data-theme="dark"] .metric-card,
+body[data-theme="dark"] .metric-box {
+  background: var(--surface-elevated);
+  border-color: var(--border-strong);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+body[data-theme="dark"] .metric-card:hover,
+body[data-theme="dark"] .metric-box:hover {
+  box-shadow: var(--accent-glow), 0 8px 20px rgba(0, 0, 0, 0.4);
+  border-color: var(--accent);
+}
+
+.metric-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.metric-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-family: var(--font-futuristic);
+  color: var(--accent);
+  line-height: 1;
+}
+
+.metric-unit {
+  font-size: 0.875rem;
+  color: var(--text-dim);
+}
+
+/* Enhanced Buttons */
+.btn,
+button.btn,
+.btn-primary,
+.btn-secondary {
+  padding: var(--space-sm) var(--space-lg);
+  border: none;
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all var(--transition-base);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  text-decoration: none;
+  line-height: 1.5;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.btn-primary:hover {
+  background: color-mix(in srgb, var(--accent) 85%, #000);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+}
+
+body[data-theme="dark"] .btn-primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+  box-shadow: var(--accent-glow);
+}
+
+body[data-theme="dark"] .btn-primary:hover {
+  box-shadow: 0 0 25px rgba(79, 209, 255, 0.5), 0 8px 16px rgba(0, 0, 0, 0.4);
+  transform: translateY(-2px);
+}
+
+.btn-secondary {
+  background: var(--surface-alt);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+  background: var(--surface-elevated);
+  border-color: var(--accent);
+}
+
+.button-group {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  margin: var(--space-md) 0;
+}
+
+/* Enhanced Info Button */
+.info-button,
+.info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: help;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.info-button:hover,
+.info-btn:hover {
+  background: var(--accent);
+  color: #ffffff;
+  transform: scale(1.1);
+}
+
+body[data-theme="dark"] .info-button:hover,
+body[data-theme="dark"] .info-btn:hover {
+  box-shadow: var(--accent-glow);
+}
+
+/* Divider for Sections */
+.divider {
+  height: 1px;
+  background: var(--border);
+  margin: var(--space-xl) 0;
+}
+
+body[data-theme="dark"] .divider {
+  background: linear-gradient(90deg, transparent, var(--border-strong), transparent);
+}
+
+/* Subsection Titles */
+.subsection-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: var(--space-lg) 0 var(--space-md) 0;
+  padding-bottom: var(--space-xs);
+  border-bottom: 2px solid var(--border);
+}
+
+body[data-theme="dark"] .subsection-title {
+  color: var(--accent);
+  text-shadow: 0 0 10px rgba(79, 209, 255, 0.3);
+  border-bottom-color: var(--accent);
+}
+
+/* Help Navigation Enhancement */
+.help-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+  padding: var(--space-md);
+  background: var(--surface-alt);
+  border-radius: var(--radius-md);
+}
+
+.help-nav-btn,
+.help-nav button {
+  padding: var(--space-xs) var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.help-nav-btn:hover,
+.help-nav button:hover,
+.help-nav-btn.active,
+.help-nav button.active {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+
+body[data-theme="dark"] .help-nav-btn.active,
+body[data-theme="dark"] .help-nav button.active {
+  box-shadow: var(--accent-glow);
+}
+
+.help-content {
+  padding: var(--space-lg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.help-article {
+  display: none;
+}
+
+.help-article.active {
+  display: block;
+}
+
+.help-article h4,
+.help-article h5 {
+  margin-top: var(--space-lg);
+  margin-bottom: var(--space-sm);
+  color: var(--accent);
+}
+
+.help-article ul,
+.help-article ol {
+  margin: var(--space-sm) 0;
+  padding-left: var(--space-xl);
+}
+
+.help-article li {
+  margin: var(--space-xs) 0;
+}
+
+.help-article code {
+  padding: 0.125rem 0.375rem;
+  background: var(--surface-alt);
+  border-radius: var(--radius-sm);
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 0.875em;
+  color: var(--accent);
+}
+
+/* Fullscreen Support */
+.fullscreen-mode {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  background: var(--bg);
+}
+
+.fullscreen-mode .side-panel {
+  display: none;
+}
+
+.fullscreen-mode .visualization-container {
+  width: 100%;
+  height: 100%;
+}
+
+.fullscreen-mode .view-grid {
+  height: calc(100vh - 100px) !important;
+}
+
+/* View Mode Enhancements */
+.view-mode-selector {
+  display: flex;
+  gap: var(--space-xs);
+  background: var(--surface-alt);
+  padding: var(--space-xs);
+  border-radius: var(--radius-md);
+}
+
+.view-mode-btn {
+  padding: var(--space-sm) var(--space-md);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.view-mode-btn svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.view-mode-btn:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.view-mode-btn.active {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+body[data-theme="dark"] .view-mode-btn.active {
+  box-shadow: var(--accent-glow);
+}
+
+/* Loading Overlay */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.loading-spinner {
+  text-align: center;
+  color: var(--accent);
+}
+
+.loading-spinner svg {
+  width: 3rem;
+  height: 3rem;
+  color: var(--accent);
+}
+
+body[data-theme="dark"] .loading-spinner svg {
+  filter: drop-shadow(var(--accent-glow));
+}
+
+.loading-spinner p {
+  margin-top: var(--space-md);
+  font-family: var(--font-futuristic);
+  font-size: 1rem;
+  color: var(--text);
+}
+
+/* Tooltip Enhancement */
+.tooltip {
+  position: absolute;
+  max-width: 300px;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+body[data-theme="dark"] .tooltip {
+  background: var(--surface-elevated);
+  border-color: var(--accent);
+  box-shadow: var(--accent-glow), var(--shadow-lg);
+}
+
+/* Status Text */
+.status-text,
+.hint {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin-top: var(--space-sm);
+  font-style: italic;
+}
+
+/* Scrollbar Styling for Dark Theme */
+body[data-theme="dark"] ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+body[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+
+body[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: var(--accent);
+  border-radius: 4px;
+}
+
+body[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-secondary);
+}
+
+/* Animation for Panel Transitions */
+.panel-section {
+  animation: fadeIn var(--transition-base);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Accessibility Improvements */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Print Styles */
+@media print {
+  .side-panel,
+  .view-controls,
+  .timeline-container {
+    display: none;
+  }
+  
+  .visualization-container {
+    width: 100%;
+    height: 100%;
+  }
+}
+
+/* High Contrast Mode */
+@media (prefers-contrast: high) {
+  :root {
+    --border: rgba(0, 0, 0, 0.4);
+    --border-strong: rgba(0, 0, 0, 0.6);
+  }
+  
+  body[data-theme="dark"] {
+    --border: rgba(255, 255, 255, 0.4);
+    --border-strong: rgba(255, 255, 255, 0.6);
+  }
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
