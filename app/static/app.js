@@ -1495,11 +1495,6 @@
         day: 'https://cdn.jsdelivr.net/gh/astronexus/NasaBlueMarble@main/earth_daymap_2048.jpg',
         night: 'https://cdn.jsdelivr.net/gh/astronexus/NasaBlueMarble@main/earth_night_2048.jpg',
       },
-      {
-        label: 'local',
-        day: '/static/assets/earth_day_4k.jpg',
-        night: '/static/assets/earth_night_4k.jpg',
-      },
     ];
 
     const LAND_MASSES = [
@@ -2541,6 +2536,54 @@
             noWrap: true,
           }),
         };
+
+        // Monitor tile errors and switch to a lightweight fallback to avoid
+        // repeated 400/404 spam from remote tile servers in restricted networks.
+        let tileErrorCount = 0;
+        const TILE_ERROR_THRESHOLD = 12; // after this many tileerrors switch to fallback
+        const TILE_ERROR_RESET_MS = 30 * 1000;
+
+        function handleTileError(err, which) {
+          try {
+            tileErrorCount += 1;
+            console.warn(`Tile error [${which}] #${tileErrorCount}`, err && err?.error ? err.error : err);
+            // reset counter after a while
+            if (tileErrorCount === 1) {
+              setTimeout(() => { tileErrorCount = 0; }, TILE_ERROR_RESET_MS);
+            }
+            if (tileErrorCount >= TILE_ERROR_THRESHOLD) {
+              console.warn('Tile error threshold reached — switching to empty fallback layer');
+              // remove existing base layers and add an empty layer to stop further requests
+              try {
+                baseLayers.standard?.removeFrom(map);
+                baseLayers.satellite?.removeFrom(map);
+                const fallbackLayer = L.layerGroup();
+                fallbackLayer.addTo(map);
+                const fallback = container.querySelector('#mapFallback');
+                if (fallback) {
+                  fallback.hidden = false;
+                  const reason = fallback.querySelector('.fallback-reason');
+                  if (reason) {
+                    reason.textContent = 'Map tiles are unavailable from remote providers. Using offline fallback.';
+                  }
+                }
+              } catch (e) {
+                console.error('Error while switching to fallback layer', e);
+              }
+            }
+          } catch (e) {
+            console.error('Error in tile error handler', e);
+          }
+        }
+
+        // Attach error listeners to tile layers to detect network/server issues
+        try {
+          baseLayers.standard.on('tileerror', (e) => handleTileError(e, 'standard'));
+          baseLayers.satellite.on('tileerror', (e) => handleTileError(e, 'satellite'));
+        } catch (attachErr) {
+          // some older leaflet builds may not have tileerror events on creation time
+          console.debug('Could not attach tileerror handlers immediately', attachErr);
+        }
 
         baseLayers.standard.addTo(map);
 

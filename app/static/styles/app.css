@@ -58,7 +58,7 @@
   
   /* Layout */
   --sidebar-width: 240px;
-  --sidebar-collapsed: 70px;
+  --sidebar-collapsed: 44px;
   --panel-width: 420px;
   --timeline-height: 120px;
 }
@@ -200,6 +200,10 @@ h4 { font-size: 1.125rem; }
   width: 0;
 }
 
+.sidebar.collapsed .logo-text {
+  display: none;
+}
+
 .logo-text h1 {
   font-size: 1.5rem;
   color: var(--neon-cyan);
@@ -296,6 +300,11 @@ h4 { font-size: 1.125rem; }
   text-align: center;
 }
 
+.sidebar.collapsed .nav-icon {
+  font-size: 1.05rem;
+  width: 20px;
+}
+
 .nav-label {
   white-space: nowrap;
   opacity: 1;
@@ -305,6 +314,11 @@ h4 { font-size: 1.125rem; }
 .sidebar.collapsed .nav-label {
   opacity: 0;
   width: 0;
+}
+
+.sidebar.collapsed .nav-label,
+.sidebar.collapsed .btn-label {
+  display: none;
 }
 
 .sidebar-footer {
@@ -379,7 +393,7 @@ h4 { font-size: 1.125rem; }
 }
 
 .control-panel[data-collapsed="true"] {
-  transform: translateX(calc(-1 * var(--panel-width) + 40px));
+  transform: translateX(calc(-1 * var(--panel-width) + 28px));
 }
 
 .panel-header {
