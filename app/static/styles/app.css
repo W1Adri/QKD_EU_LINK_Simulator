@@ -390,6 +390,8 @@ h4 { font-size: 1.125rem; }
   overflow: hidden;
   box-shadow: 4px 0 20px rgba(0, 0, 0, 0.5);
   transition: transform var(--transition-base), width var(--transition-base);
+  position: relative;
+  z-index: 60;
 }
 
 .control-panel[data-collapsed="true"] {
