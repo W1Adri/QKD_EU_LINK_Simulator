@@ -85,7 +85,13 @@
     </nav>
 
     <main class="main-content">
-      <aside id="controlPanel" class="control-panel">
+      <aside id="controlPanel" class="control-panel" data-collapsed="false" aria-expanded="true">
+        <div class="panel-header">
+          <button id="btnPanelToggle" class="panel-toggle-btn" type="button" aria-pressed="false" title="Hide panel">
+            <span class="toggle-icon">◀</span>
+          </button>
+          <h3 class="panel-title">Controls</h3>
+        </div>
         <div class="panel-content">
           <section class="panel-section active" data-section="orbit">
             <div class="section-header">
@@ -951,7 +957,13 @@
         </div>
       </aside>
 
+      <div id="panelResizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-controls="controlPanel" aria-label="Adjust panel width" tabindex="0"></div>
+
       <div class="visualization-container">
+        <button id="panelReveal" class="panel-reveal" type="button" hidden title="Show controls">
+          <span class="reveal-icon">▶</span>
+          <span class="reveal-text">Controls</span>
+        </button>
         <div class="viz-header">
           <div class="view-controls">
             <button class="view-btn active" data-view="dual" title="Dual view">
@@ -965,6 +977,10 @@
             <button class="view-btn" data-view="2d" title="2D only">
               <span class="btn-icon">🗺️</span>
               <span class="btn-text">2D</span>
+            </button>
+            <button class="view-btn" data-view="fullscreen" title="Fullscreen mode">
+              <span class="btn-icon">⛶</span>
+              <span class="btn-text">Fullscreen</span>
             </button>
           </div>
 
@@ -980,10 +996,33 @@
             <canvas id="threeCanvas" class="globe-canvas"></canvas>
             <div id="threeFallback" class="fallback-msg" hidden>
               <span class="fallback-icon">⚠️</span>
-              <span>3D visualization unavailable</span>
+              <div class="fallback-content">
+                <strong>3D Visualization Unavailable</strong>
+                <p class="fallback-reason">Possible causes:</p>
+                <ul class="fallback-list">
+                  <li>WebGL not supported or disabled in your browser</li>
+                  <li>Graphics drivers may need updating</li>
+                  <li>Hardware acceleration is disabled</li>
+                </ul>
+                <p class="fallback-action">Try using 2D view mode or update your browser.</p>
+              </div>
             </div>
           </div>
-          <div id="mapContainer" class="view-pane view-2d"></div>
+          <div id="mapContainer" class="view-pane view-2d">
+            <div id="mapFallback" class="fallback-msg" hidden>
+              <span class="fallback-icon">⚠️</span>
+              <div class="fallback-content">
+                <strong>2D Map Unavailable</strong>
+                <p class="fallback-reason">Possible causes:</p>
+                <ul class="fallback-list">
+                  <li>Leaflet library failed to load (check internet connection)</li>
+                  <li>Map tiles cannot be reached</li>
+                  <li>Browser extensions blocking map resources</li>
+                </ul>
+                <p class="fallback-action">Try refreshing the page or check your network connection.</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="timeline-panel">
