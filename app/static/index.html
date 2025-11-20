@@ -6,7 +6,7 @@
   <title>QKD EU LINK Simulator - Quantum Key Distribution Planner</title>
   <link rel="icon" href="/favicon.ico">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;900&family=Inter:wght@300;400;500;600;700&display=swap">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <link rel="stylesheet" href="/static/styles/app.css" />
   <script type="importmap">
@@ -18,54 +18,86 @@
     }
   </script>
 </head>
-<body>
-  <div class="app-shell">
-    <header class="app-header">
-      <div class="brand">
-        <h1>QKD EU LINK Simulator</h1>
-        <p>Quantum Key Distribution - Visualize resonant orbits and Earth-to-space optical links</p>
+<body data-theme="dark">
+  <div class="quantum-grid-bg"></div>
+  <div class="app-container">
+    <nav class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="logo-container">
+          <div class="logo-icon">
+            <div class="quantum-symbol">⚛</div>
+          </div>
+          <div class="logo-text">
+            <h1>QKD</h1>
+            <span>EU LINK</span>
+          </div>
+        </div>
+        <button id="sidebarToggle" class="sidebar-toggle" aria-label="Toggle sidebar">
+          <span class="toggle-icon">◀</span>
+        </button>
       </div>
-      <div class="header-actions">
-        <button id="btnPanelToggle" type="button" class="ghost" aria-pressed="false">Show panel</button>
-        <button id="btnMapStyle" type="button" class="ghost">Satellite map</button>
-        <button id="btnTheme" type="button" class="ghost" aria-pressed="false">Dark mode</button>
+      
+      <div class="sidebar-nav">
+        <button class="nav-item active" data-section="orbit" title="Orbit & Resonance">
+          <span class="nav-icon">🛰️</span>
+          <span class="nav-label">Orbit</span>
+        </button>
+        <button class="nav-item" data-section="optics" title="Optical Link">
+          <span class="nav-icon">🔭</span>
+          <span class="nav-label">Optics</span>
+        </button>
+        <button class="nav-item" data-section="stations" title="Ground Stations">
+          <span class="nav-icon">📡</span>
+          <span class="nav-label">Stations</span>
+        </button>
+        <button class="nav-item" data-section="analytics" title="Analytics">
+          <span class="nav-icon">📊</span>
+          <span class="nav-label">Analytics</span>
+        </button>
+        <button class="nav-item" data-section="weather" title="Weather">
+          <span class="nav-icon">🌤️</span>
+          <span class="nav-label">Weather</span>
+        </button>
+        <button class="nav-item" data-section="atmosphere" title="Atmosphere">
+          <span class="nav-icon">🌍</span>
+          <span class="nav-label">Atmosphere</span>
+        </button>
+        <button class="nav-item" data-section="qkd" title="QKD Parameters">
+          <span class="nav-icon">🔐</span>
+          <span class="nav-label">QKD</span>
+        </button>
+        <button class="nav-item" data-section="help" title="Help">
+          <span class="nav-icon">❓</span>
+          <span class="nav-label">Help</span>
+        </button>
       </div>
-    </header>
 
-    <main class="workspace">
-      <aside id="controlPanel" class="control-panel" data-collapsed="true" aria-expanded="false">
-        <nav class="panel-tabs" aria-label="Configuration sections">
-          <button type="button" class="is-active" data-section-target="orbit" aria-label="Orbit & Resonance">
-            <span class="tab-label">Orbit &amp; Resonance</span>
+      <div class="sidebar-footer">
+        <button id="btnMapStyle" class="action-btn" title="Toggle map style">
+          <span class="btn-icon">🗺️</span>
+          <span class="btn-label">Map Style</span>
+        </button>
+        <button id="btnTheme" class="action-btn" title="Toggle theme">
+          <span class="btn-icon">🌙</span>
+          <span class="btn-label">Theme</span>
+        </button>
+      </div>
+    </nav>
+
+    <main class="main-content">
+      <aside id="controlPanel" class="control-panel" data-collapsed="false" aria-expanded="true">
+        <div class="panel-header">
+          <button id="btnPanelToggle" class="panel-toggle-btn" type="button" aria-pressed="false" title="Hide panel">
+            <span class="toggle-icon">◀</span>
           </button>
-          <button type="button" data-section-target="optics" aria-label="Optical Link">
-            <span class="tab-label">Optical Link</span>
-          </button>
-          <button type="button" data-section-target="stations" aria-label="Ground Stations">
-            <span class="tab-label">Ground Stations</span>
-          </button>
-          <button type="button" data-section-target="analytics" aria-label="Analytics">
-            <span class="tab-label">Analytics</span>
-          </button>
-          <button type="button" data-section-target="weather" aria-label="Weather Layers">
-            <span class="tab-label">Weather Layers</span>
-          </button>
-          <button type="button" data-section-target="atmosphere" aria-label="Atmospheric Models">
-            <span class="tab-label">Atmospheric Models</span>
-          </button>
-          <button type="button" data-section-target="qkd" aria-label="QKD Parameters">
-            <span class="tab-label">QKD Parameters</span>
-          </button>
-          <button type="button" data-section-target="help" aria-label="Help & Documentation">
-            <span class="tab-label">Help &amp; Documentation</span>
-          </button>
-        </nav>
+          <h3 class="panel-title">Controls</h3>
+        </div>
         <div class="panel-content">
-          <section class="panel-section is-active" data-section="orbit">
-            <header>
-              <h2>Orbit &amp; Resonance Setup</h2>
-              <p>Define the orbital elements, resonance targets and valid search ranges.</p>
-            </header>
+          <section class="panel-section active" data-section="orbit">
+            <div class="section-header">
+              <h2>⚙️ Orbit & Resonance</h2>
+              <p class="section-desc">Configure orbital elements and resonance parameters</p>
+            </div>
             <div class="field">
               <div class="field-label">
                 <label for="satelliteName">Satellite name</label>
@@ -285,10 +317,10 @@
           <div id="orbitMessages" class="panel-messages" hidden></div>
 
           <section class="panel-section" data-section="optics">
-            <header>
-              <h2>Optical Link</h2>
-              <p>Set the apertures, wavelength and temporal sampling used to evaluate the link budget.</p>
-            </header>
+            <div class="section-header">
+              <h2>🔭 Optical Link</h2>
+              <p class="section-desc">Configure apertures, wavelength, and temporal sampling</p>
+            </div>
             <div class="field-group">
               <div class="field">
                 <div class="field-label">
@@ -332,10 +364,10 @@
           </section>
 
           <section class="panel-section" data-section="stations">
-            <header>
-              <h2>Ground Stations</h2>
-              <p>Select, add or focus ground terminals and define site-specific turbulence inputs.</p>
-            </header>
+            <div class="section-header">
+              <h2>📡 Ground Stations</h2>
+              <p class="section-desc">Manage ground terminals and turbulence parameters</p>
+            </div>
             <div class="field">
               <div class="field-label">
                 <label for="stationSelect">Active ground station</label>
@@ -371,12 +403,12 @@
           </section>
 
           <section class="panel-section" data-section="analytics">
-            <header>
-              <h2>Analytics</h2>
-              <p>Inspect instantaneous link performance and plot full-pass trends.</p>
-            </header>
+            <div class="section-header">
+              <h2>📊 Analytics</h2>
+              <p class="section-desc">Real-time metrics and performance analysis</p>
+            </div>
             <section class="instant-metrics" aria-live="polite">
-              <h4>Link metrics at current time</h4>
+              <h4 class="metrics-title">⚡ Real-time Link Metrics</h4>
               <p>
                 <span class="metric-label">Link loss (dB)
                   <button type="button" class="info-button" aria-label="Link loss info" data-info="Total geometric plus atmospheric attenuation in decibels at the current simulation time.">i</button>
@@ -432,8 +464,8 @@
                 <strong id="windMetric">--</strong>
               </p>
             </section>
-            <h4>Full pass metrics</h4>
-            <p>Select a metric to plot its evolution over the entire simulated pass.</p>
+            <h4 class="metrics-title">📈 Full Pass Metrics</h4>
+            <p>Select a metric to visualize evolution over the complete pass.</p>
             <ul class="metric-graph-list">
               <li>
                 <span>Geometric loss (dB)
@@ -481,10 +513,10 @@
           </section>
 
           <section class="panel-section" data-section="weather">
-            <header>
-              <h2>Weather Layers</h2>
-              <p>Sample Open-Meteo pressure level fields globally and project them on the map.</p>
-            </header>
+            <div class="section-header">
+              <h2>🌤️ Weather Layers</h2>
+              <p class="section-desc">Global atmospheric data visualization</p>
+            </div>
             <div class="field-group">
               <div class="field">
                 <div class="field-label">
@@ -528,10 +560,10 @@
           </section>
 
           <section class="panel-section" data-section="atmosphere">
-            <header>
-              <h2>Atmospheric Models</h2>
-              <p>Select turbulence and attenuation models fed by Open-Meteo data to drive the link budget.</p>
-            </header>
+            <div class="section-header">
+              <h2>🌍 Atmospheric Models</h2>
+              <p class="section-desc">Turbulence and attenuation models</p>
+            </div>
             <fieldset class="model-selector" role="radiogroup" aria-label="Atmospheric turbulence models">
               <legend class="sr-only">Atmospheric turbulence model</legend>
               <label class="model-card">
@@ -595,10 +627,10 @@
           </section>
 
           <section class="panel-section" data-section="qkd" hidden>
-            <header>
-              <h2>Quantum Key Distribution (QKD)</h2>
-              <p>Configure QKD protocol parameters and calculate secure key generation rates using quantum channel models.</p>
-            </header>
+            <div class="section-header">
+              <h2>🔐 Quantum Key Distribution</h2>
+              <p class="section-desc">QKD protocol configuration and secure key rate calculations</p>
+            </div>
             
             <div class="info-message">
               <strong>Note:</strong> QKD calculations integrate with optical link budget and atmospheric turbulence models to provide realistic secure key rate estimates.
@@ -678,10 +710,10 @@
           </section>
 
           <section class="panel-section" data-section="help" hidden>
-            <header>
-              <h2>Help &amp; Documentation</h2>
-              <p>Reference and developer documentation for the simulator. Choose a topic below.</p>
-            </header>
+            <div class="section-header">
+              <h2>❓ Help & Documentation</h2>
+              <p class="section-desc">Reference guides and troubleshooting</p>
+            </div>
             <nav class="help-nav" aria-label="Help topics">
               <button type="button" data-help-topic="overview">Overview &amp; Quick Start</button>
               <button type="button" data-help-topic="orbits">Orbits (elements, epochs)</button>
@@ -927,60 +959,115 @@
 
       <div id="panelResizer" class="panel-resizer" role="separator" aria-orientation="vertical" aria-controls="controlPanel" aria-label="Adjust panel width" tabindex="0"></div>
 
-      <section class="visual-area">
-        <button id="panelReveal" class="panel-reveal" type="button" hidden>Show controls</button>
-        <div class="view-toolbar" role="tablist">
-          <button class="is-active" data-view="dual" role="tab" aria-selected="true">Dual view</button>
-          <button data-view="3d" role="tab" aria-selected="false">3D only</button>
-          <button data-view="2d" role="tab" aria-selected="false">2D only</button>
-        </div>
-        <div class="constellation-controls" id="constellationControls">
-          <h3>Constellation overlays</h3>
-          <div class="constellation-list" id="constellationList" role="group" aria-label="Toggle satellite constellations"></div>
-          <p class="constellation-status hint" id="constellationStatus" hidden></p>
-        </div>
-        <div class="view-grid" id="viewGrid" data-active-view="dual">
-          <div id="threeContainer" class="view-pane view-3d" aria-label="3D globe">
-            <canvas id="threeCanvas" class="globe-canvas" aria-hidden="true"></canvas>
-            <div id="threeFallback" hidden>Could not initialize the 3D scene.</div>
+      <div class="visualization-container">
+        <button id="panelReveal" class="panel-reveal" type="button" hidden title="Show controls">
+          <span class="reveal-icon">▶</span>
+          <span class="reveal-text">Controls</span>
+        </button>
+        <div class="viz-header">
+          <div class="view-controls">
+            <button class="view-btn active" data-view="dual" title="Dual view">
+              <span class="btn-icon">⊞</span>
+              <span class="btn-text">Dual</span>
+            </button>
+            <button class="view-btn" data-view="3d" title="3D only">
+              <span class="btn-icon">🌐</span>
+              <span class="btn-text">3D</span>
+            </button>
+            <button class="view-btn" data-view="2d" title="2D only">
+              <span class="btn-icon">🗺️</span>
+              <span class="btn-text">2D</span>
+            </button>
+            <button class="view-btn" data-view="fullscreen" title="Fullscreen mode">
+              <span class="btn-icon">⛶</span>
+              <span class="btn-text">Fullscreen</span>
+            </button>
           </div>
-          <div id="mapContainer" class="view-pane view-2d" aria-label="2D map"></div>
+
+          <div class="constellation-panel" id="constellationControls">
+            <span class="panel-title">🛰️ Constellations</span>
+            <div class="constellation-list" id="constellationList"></div>
+            <p class="constellation-status" id="constellationStatus" hidden></p>
+          </div>
         </div>
-        <div class="timeline">
-          <div class="timeline-header">
-            <strong>Time control</strong>
-            <div class="timeline-actions">
-              <button id="btnPlay" type="button">▶</button>
-              <button id="btnPause" type="button">⏸</button>
-              <button id="btnStepBack" type="button">⏪</button>
-              <button id="btnStepForward" type="button">⏩</button>
-              <button id="btnResetTime" type="button">↺</button>
+
+        <div class="view-grid" id="viewGrid" data-active-view="dual">
+          <div id="threeContainer" class="view-pane view-3d">
+            <canvas id="threeCanvas" class="globe-canvas"></canvas>
+            <div id="threeFallback" class="fallback-msg" hidden>
+              <span class="fallback-icon">⚠️</span>
+              <div class="fallback-content">
+                <strong>3D Visualization Unavailable</strong>
+                <p class="fallback-reason">Possible causes:</p>
+                <ul class="fallback-list">
+                  <li>WebGL not supported or disabled in your browser</li>
+                  <li>Graphics drivers may need updating</li>
+                  <li>Hardware acceleration is disabled</li>
+                </ul>
+                <p class="fallback-action">Try using 2D view mode or update your browser.</p>
+              </div>
+            </div>
+          </div>
+          <div id="mapContainer" class="view-pane view-2d">
+            <div id="mapFallback" class="fallback-msg" hidden>
+              <span class="fallback-icon">⚠️</span>
+              <div class="fallback-content">
+                <strong>2D Map Unavailable</strong>
+                <p class="fallback-reason">Possible causes:</p>
+                <ul class="fallback-list">
+                  <li>Leaflet library failed to load (check internet connection)</li>
+                  <li>Map tiles cannot be reached</li>
+                  <li>Browser extensions blocking map resources</li>
+                </ul>
+                <p class="fallback-action">Try refreshing the page or check your network connection.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-panel">
+          <div class="timeline-controls">
+            <button id="btnPlay" class="time-btn" title="Play">▶</button>
+            <button id="btnPause" class="time-btn" title="Pause">⏸</button>
+            <button id="btnStepBack" class="time-btn" title="Step back">⏪</button>
+            <button id="btnStepForward" class="time-btn" title="Step forward">⏩</button>
+            <button id="btnResetTime" class="time-btn" title="Reset">↺</button>
+            <div class="speed-control">
               <label for="timeWarp">Speed</label>
-              <select id="timeWarp">
-                <option value="1">x1</option>
-                <option value="5">x5</option>
-                <option value="10">x10</option>
-                <option value="30">x30</option>
-                <option value="60" selected>x60</option>
-                <option value="120">x120</option>
-                <option value="300">x300</option>
-                <option value="600">x600</option>
-                <option value="900">x900</option>
-                <option value="1800">x1800</option>
-                <option value="3600">x3600</option>
+              <select id="timeWarp" class="speed-select">
+                <option value="1">×1</option>
+                <option value="5">×5</option>
+                <option value="10">×10</option>
+                <option value="30">×30</option>
+                <option value="60" selected>×60</option>
+                <option value="120">×120</option>
+                <option value="300">×300</option>
+                <option value="600">×600</option>
+                <option value="900">×900</option>
+                <option value="1800">×1800</option>
+                <option value="3600">×3600</option>
               </select>
             </div>
           </div>
-          <input id="timeSlider" type="range" min="0" max="1" step="1" value="0" />
-          <div class="timeline-readout">
-            <span>t = <span id="timeLabel">0 s</span></span>
-            <span class="spacer">·</span>
-            <span>Elevation: <span id="elevationLabel">--</span></span>
-            <span class="spacer">·</span>
-            <span>Geometric loss: <span id="lossLabel">--</span></span>
+          
+          <input id="timeSlider" class="time-slider" type="range" min="0" max="1" step="1" value="0" />
+          
+          <div class="timeline-info">
+            <div class="info-item">
+              <span class="info-label">Time:</span>
+              <span id="timeLabel" class="info-value">0 s</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Elevation:</span>
+              <span id="elevationLabel" class="info-value">--</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Loss:</span>
+              <span id="lossLabel" class="info-value">--</span>
+            </div>
           </div>
         </div>
-      </section>
+      </div>
     </main>
   </div>
 

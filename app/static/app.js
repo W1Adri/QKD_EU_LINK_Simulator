@@ -2506,48 +2506,61 @@
 
     function initMap(container) {
       if (!container) return null;
-      map = L.map(container, {
-        zoomSnap: 0.25,
-        zoomDelta: 0.5,
-        minZoom: 0,
-        maxZoom: 12,
-        worldCopyJump: false,
-        maxBounds: [
-          [-85, -180],
-          [85, 180],
-        ],
-      });
+      
+      // Check if Leaflet is available
+      if (typeof L === 'undefined') {
+        console.error('Leaflet library not loaded - 2D map unavailable');
+        const fallback = container.querySelector('#mapFallback');
+        if (fallback) {
+          fallback.hidden = false;
+          fallback.querySelector('.fallback-reason').textContent = 'Leaflet library failed to load. Check your internet connection and ensure third-party scripts are allowed.';
+        }
+        return null;
+      }
+      
+      try {
+        map = L.map(container, {
+          zoomSnap: 0.25,
+          zoomDelta: 0.5,
+          minZoom: 0,
+          maxZoom: 12,
+          worldCopyJump: false,
+          maxBounds: [
+            [-85, -180],
+            [85, 180],
+          ],
+        });
 
-      baseLayers = {
-        standard: L.tileLayer(TILE_STANDARD, {
-          attribution: '© OpenStreetMap contributors',
-          noWrap: true,
-        }),
-        satellite: L.tileLayer(TILE_SATELLITE, {
-          attribution: 'Imagery © Esri & the GIS User Community',
-          noWrap: true,
-        }),
-      };
+        baseLayers = {
+          standard: L.tileLayer(TILE_STANDARD, {
+            attribution: '© OpenStreetMap contributors',
+            noWrap: true,
+          }),
+          satellite: L.tileLayer(TILE_SATELLITE, {
+            attribution: 'Imagery © Esri & the GIS User Community',
+            noWrap: true,
+          }),
+        };
 
-      baseLayers.standard.addTo(map);
+        baseLayers.standard.addTo(map);
 
-      orbitLayer = L.polyline([], {
-        color: '#7c3aed',
-        weight: 2.5,
-        opacity: 0.85,
-      }).addTo(map);
+        orbitLayer = L.polyline([], {
+          color: '#7c3aed',
+          weight: 2.5,
+          opacity: 0.85,
+        }).addTo(map);
 
-      linkLayer = L.polyline([], {
-        color: '#38bdf8',
-        weight: 1.5,
-        dashArray: '6 6',
-      }).addTo(map);
+        linkLayer = L.polyline([], {
+          color: '#38bdf8',
+          weight: 1.5,
+          dashArray: '6 6',
+        }).addTo(map);
 
-      satelliteMarker = L.circleMarker([0, 0], {
-        radius: 6,
-        color: '#f97316',
-        weight: 2,
-        fillColor: '#fb923c',
+        satelliteMarker = L.circleMarker([0, 0], {
+          radius: 6,
+          color: '#f97316',
+          weight: 2,
+          fillColor: '#fb923c',
         fillOpacity: 0.9,
       }).addTo(map);
 
@@ -2562,6 +2575,18 @@
       map.fitWorld({ animate: false, maxZoom: 2 });
       setTimeout(() => map.invalidateSize(), 150);
       return map;
+      } catch (error) {
+        console.error('Failed to initialize 2D map:', error);
+        const fallback = container.querySelector('#mapFallback');
+        if (fallback) {
+          fallback.hidden = false;
+          const reason = fallback.querySelector('.fallback-reason');
+          if (reason) {
+            reason.textContent = `Map initialization error: ${error.message || 'Unknown error'}`;
+          }
+        }
+        return null;
+      }
     }
 
     function setBaseLayer(mode) {
@@ -3115,7 +3140,15 @@
 
     function showFallback(message) {
       if (fallbackEl) {
-        fallbackEl.textContent = message || '3D scene could not be initialized.';
+        // Update the detailed error message
+        const contentEl = fallbackEl.querySelector('.fallback-content');
+        const reasonEl = fallbackEl.querySelector('.fallback-reason');
+        if (reasonEl) {
+          reasonEl.textContent = message || '3D scene could not be initialized.';
+        } else {
+          // Fallback to simple text if structure not found
+          fallbackEl.textContent = message || '3D scene could not be initialized.';
+        }
         fallbackEl.hidden = false;
         fallbackEl.setAttribute('aria-hidden', 'false');
       }
@@ -4716,6 +4749,7 @@
       elements.panelSections.forEach((section) => {
         const active = section.dataset.section === target;
         section.classList.toggle('is-active', active);
+        section.classList.toggle('active', active);
         section.hidden = !active;
       });
       elements.panelTabs?.forEach((tab) => {
@@ -4988,11 +5022,49 @@
       elements.viewTabs?.forEach((tab) => {
         const active = tab.dataset.view === target;
         tab.classList.toggle('is-active', active);
+        tab.classList.toggle('active', active);
         tab.setAttribute('aria-selected', active ? 'true' : 'false');
       });
       if (elements.viewGrid) {
         elements.viewGrid.dataset.activeView = target;
       }
+      
+      // Handle fullscreen mode
+      const vizContainer = document.querySelector('.visualization-container');
+      if (vizContainer) {
+        if (target === 'fullscreen') {
+          vizContainer.setAttribute('data-fullscreen', 'true');
+          // Hide sidebar and panel for fullscreen
+          const sidebar = document.getElementById('sidebar');
+          const panel = document.getElementById('controlPanel');
+          if (sidebar) sidebar.style.display = 'none';
+          if (panel) panel.style.display = 'none';
+          
+          // Actually enter fullscreen
+          if (vizContainer.requestFullscreen) {
+            vizContainer.requestFullscreen().catch(err => {
+              console.warn('Could not enter fullscreen:', err);
+            });
+          } else if (vizContainer.webkitRequestFullscreen) {
+            vizContainer.webkitRequestFullscreen();
+          } else if (vizContainer.msRequestFullscreen) {
+            vizContainer.msRequestFullscreen();
+          }
+        } else {
+          vizContainer.setAttribute('data-fullscreen', 'false');
+          // Show sidebar and panel
+          const sidebar = document.getElementById('sidebar');
+          const panel = document.getElementById('controlPanel');
+          if (sidebar) sidebar.style.display = '';
+          if (panel) panel.style.display = '';
+          
+          // Exit fullscreen if active
+          if (document.fullscreenElement) {
+            document.exitFullscreen();
+          }
+        }
+      }
+      
       setTimeout(() => invalidateMap(), 250);
     }
 
@@ -5217,6 +5289,31 @@
           activatePanelSection(tab.dataset.sectionTarget);
         });
       });
+
+      // New sidebar navigation handling
+      const sidebarNavItems = document.querySelectorAll('.sidebar .nav-item[data-section]');
+      sidebarNavItems.forEach((item) => {
+        item.addEventListener('click', () => {
+          const section = item.dataset.section;
+          if (section) {
+            // Update active nav item
+            sidebarNavItems.forEach(nav => nav.classList.remove('active'));
+            item.classList.add('active');
+            // Switch panel section
+            activatePanelSection(section);
+          }
+        });
+      });
+
+      // Sidebar toggle functionality
+      const sidebarToggle = document.getElementById('sidebarToggle');
+      const sidebar = document.getElementById('sidebar');
+      if (sidebarToggle && sidebar) {
+        sidebarToggle.addEventListener('click', () => {
+          sidebar.classList.toggle('collapsed');
+        });
+      }
+
 
       // Wire help nav buttons (show corresponding help article)
       try {
