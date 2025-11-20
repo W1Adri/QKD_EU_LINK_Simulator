@@ -1483,6 +1483,27 @@
     const NIGHT_GLOW = 'rgba(255, 198, 120, 0.85)';
     const NIGHT_GLOW_EDGE = 'rgba(255, 140, 60, 0.0)';
 
+    // Global resource-error handler: replace repeatedly-failing small PNG requests
+    // (e.g., '0.png' / '1.png') with a 1x1 transparent image to stop noisy 400s.
+    if (typeof window !== 'undefined' && !window.__qkd_error_handler_installed) {
+      window.__qkd_error_handler_installed = true;
+      window.addEventListener('error', (ev) => {
+        try {
+          const t = ev.target || ev.srcElement;
+          if (t && t.tagName && t.tagName.toLowerCase() === 'img') {
+            const src = t.currentSrc || t.src || '';
+            if (/\b0\.png$|\b1\.png$/i.test(src) || /\/0\.png$|\/1\.png$/.test(src)) {
+              console.warn('Resource image failed; replacing with transparent placeholder:', src);
+              // 1x1 transparent GIF
+              t.src = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
+            }
+          }
+        } catch (e) {
+          // swallow
+        }
+      }, true);
+    }
+
     // Prefer reliable CDN textures first to avoid noisy local 404s when /static/assets is not populated
     const TEXTURE_SOURCES = [
       {
