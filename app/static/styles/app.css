@@ -393,7 +393,7 @@ h4 { font-size: 1.125rem; }
 }
 
 .control-panel[data-collapsed="true"] {
-  transform: translateX(calc(-1 * var(--panel-width) + 28px));
+  transform: translateX(calc(-100%));
 }
 
 .panel-header {
@@ -509,8 +509,8 @@ h4 { font-size: 1.125rem; }
 }
 
 .section-header {
-  margin-bottom: var(--space-lg);
-  padding-bottom: var(--space-md);
+  margin-bottom: var(--space-md);
+  padding-bottom: var(--space-sm);
   border-bottom: 2px solid var(--cyber-border);
 }
 
@@ -518,6 +518,7 @@ h4 { font-size: 1.125rem; }
   color: var(--neon-cyan);
   text-shadow: var(--glow-cyan);
   margin-bottom: var(--space-xs);
+  font-size: 1.25rem;
 }
 
 .section-desc {
@@ -531,11 +532,11 @@ h4 { font-size: 1.125rem; }
    ===================================================== */
 
 .field {
-  margin-bottom: var(--space-lg);
+  margin-bottom: var(--space-md);
 }
 
 .field-group {
-  margin-bottom: var(--space-lg);
+  margin-bottom: var(--space-md);
 }
 
 .field-label {
@@ -575,7 +576,7 @@ input[type="datetime-local"],
 select,
 textarea {
   width: 100%;
-  padding: var(--space-sm) var(--space-md);
+  padding: 0.4rem var(--space-md);
   background: var(--cyber-bg-secondary);
   border: 1px solid var(--cyber-border);
   border-radius: var(--radius-md);
@@ -584,7 +585,7 @@ textarea {
   font-size: 0.875rem;
   transition: all var(--transition-fast);
   margin-bottom: var(--space-xs);
-  min-height: 38px;
+  min-height: 36px;
 }
 
 input[type="text"]:focus,
@@ -641,7 +642,7 @@ input[type="range"]::-moz-range-thumb:hover {
 }
 
 button {
-  padding: var(--space-sm) var(--space-lg);
+  padding: 0.4rem var(--space-md);
   background: linear-gradient(135deg, var(--neon-cyan), var(--neon-purple));
   border: none;
   border-radius: var(--radius-md);
@@ -654,7 +655,7 @@ button {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin: var(--space-xs) 0;
-  min-height: 36px;
+  min-height: 34px;
 }
 
 button:hover {
