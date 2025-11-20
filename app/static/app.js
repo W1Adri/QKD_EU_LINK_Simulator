@@ -1483,27 +1483,6 @@
     const NIGHT_GLOW = 'rgba(255, 198, 120, 0.85)';
     const NIGHT_GLOW_EDGE = 'rgba(255, 140, 60, 0.0)';
 
-    // Global resource-error handler: replace repeatedly-failing small PNG requests
-    // (e.g., '0.png' / '1.png') with a 1x1 transparent image to stop noisy 400s.
-    if (typeof window !== 'undefined' && !window.__qkd_error_handler_installed) {
-      window.__qkd_error_handler_installed = true;
-      window.addEventListener('error', (ev) => {
-        try {
-          const t = ev.target || ev.srcElement;
-          if (t && t.tagName && t.tagName.toLowerCase() === 'img') {
-            const src = t.currentSrc || t.src || '';
-            if (/\b0\.png$|\b1\.png$/i.test(src) || /\/0\.png$|\/1\.png$/.test(src)) {
-              console.warn('Resource image failed; replacing with transparent placeholder:', src);
-              // 1x1 transparent GIF
-              t.src = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
-            }
-          }
-        } catch (e) {
-          // swallow
-        }
-      }, true);
-    }
-
     // Prefer reliable CDN textures first to avoid noisy local 404s when /static/assets is not populated
     const TEXTURE_SOURCES = [
       {
@@ -1515,6 +1494,11 @@
         label: 'cdn-nasa',
         day: 'https://cdn.jsdelivr.net/gh/astronexus/NasaBlueMarble@main/earth_daymap_2048.jpg',
         night: 'https://cdn.jsdelivr.net/gh/astronexus/NasaBlueMarble@main/earth_night_2048.jpg',
+      },
+      {
+        label: 'local',
+        day: '/static/assets/earth_day_4k.jpg',
+        night: '/static/assets/earth_night_4k.jpg',
       },
     ];
 
@@ -2538,7 +2522,7 @@
         map = L.map(container, {
           zoomSnap: 0.25,
           zoomDelta: 0.5,
-          minZoom: 2,
+          minZoom: 0,
           maxZoom: 12,
           worldCopyJump: false,
           maxBounds: [
@@ -2547,66 +2531,19 @@
           ],
         });
 
+        const TRANSPARENT_PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
+        // Allow horizontal wrapping to avoid requesting invalid tile indices
         baseLayers = {
           standard: L.tileLayer(TILE_STANDARD, {
             attribution: '© OpenStreetMap contributors',
-            noWrap: true,
-            bounds: [[-85, -180], [85, 180]],
+            // noWrap: false by default — allow wrap for global maps
+            errorTileUrl: TRANSPARENT_PLACEHOLDER,
           }),
           satellite: L.tileLayer(TILE_SATELLITE, {
             attribution: 'Imagery © Esri & the GIS User Community',
-            noWrap: true,
-            bounds: [[-85, -180], [85, 180]],
+            errorTileUrl: TRANSPARENT_PLACEHOLDER,
           }),
         };
-
-        // Monitor tile errors and switch to a lightweight fallback to avoid
-        // repeated 400/404 spam from remote tile servers in restricted networks.
-        let tileErrorCount = 0;
-        const TILE_ERROR_THRESHOLD = 12; // after this many tileerrors switch to fallback
-        const TILE_ERROR_RESET_MS = 30 * 1000;
-
-        function handleTileError(err, which) {
-          try {
-            tileErrorCount += 1;
-            console.warn(`Tile error [${which}] #${tileErrorCount}`, err && err?.error ? err.error : err);
-            // reset counter after a while
-            if (tileErrorCount === 1) {
-              setTimeout(() => { tileErrorCount = 0; }, TILE_ERROR_RESET_MS);
-            }
-            if (tileErrorCount >= TILE_ERROR_THRESHOLD) {
-              console.warn('Tile error threshold reached — switching to empty fallback layer');
-              // remove existing base layers and add an empty layer to stop further requests
-              try {
-                baseLayers.standard?.removeFrom(map);
-                baseLayers.satellite?.removeFrom(map);
-                const fallbackLayer = L.layerGroup();
-                fallbackLayer.addTo(map);
-                const fallback = container.querySelector('#mapFallback');
-                if (fallback) {
-                  fallback.hidden = false;
-                  const reason = fallback.querySelector('.fallback-reason');
-                  if (reason) {
-                    reason.textContent = 'Map tiles are unavailable from remote providers. Using offline fallback.';
-                  }
-                }
-              } catch (e) {
-                console.error('Error while switching to fallback layer', e);
-              }
-            }
-          } catch (e) {
-            console.error('Error in tile error handler', e);
-          }
-        }
-
-        // Attach error listeners to tile layers to detect network/server issues
-        try {
-          baseLayers.standard.on('tileerror', (e) => handleTileError(e, 'standard'));
-          baseLayers.satellite.on('tileerror', (e) => handleTileError(e, 'satellite'));
-        } catch (attachErr) {
-          // some older leaflet builds may not have tileerror events on creation time
-          console.debug('Could not attach tileerror handlers immediately', attachErr);
-        }
 
         baseLayers.standard.addTo(map);
 
@@ -3236,26 +3173,20 @@
     }
 
     function buildRenderer() {
-      try {
-        renderer = new THREE.WebGLRenderer({
-          canvas: canvasEl,
-          antialias: true,
-          alpha: true,
-          failIfMajorPerformanceCaveat: false,
-        });
-        renderer.outputColorSpace = THREE.SRGBColorSpace;
-        renderer.setPixelRatio(window.devicePixelRatio || 1);
-        resizeRenderer();
-        canvasEl.addEventListener('webglcontextlost', (event) => {
-          event.preventDefault();
-          cancelAnimation();
-          showFallback('The WebGL context was lost. Reload to try again.');
-          isReady = false;
-        });
-      } catch (error) {
-        console.error('Failed to create WebGL renderer:', error);
-        throw new Error('WebGL not supported or unavailable. Please check your browser settings and graphics drivers.');
-      }
+      renderer = new THREE.WebGLRenderer({
+        canvas: canvasEl,
+        antialias: true,
+        alpha: true,
+      });
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.setPixelRatio(window.devicePixelRatio || 1);
+      resizeRenderer();
+      canvasEl.addEventListener('webglcontextlost', (event) => {
+        event.preventDefault();
+        cancelAnimation();
+        showFallback('The WebGL context was lost. Reload to try again.');
+        isReady = false;
+      });
     }
 
     function buildCamera() {
@@ -3294,6 +3225,38 @@
       // soft hemisphere for subtle sky/ground tint
       const hemi = new THREE.HemisphereLight(0x87bfff, 0x0b1020, 0.18);
       scene.add(ambient, sunLight, rim, hemi);
+    }
+
+    // Turn panel headers into accordions (collapsible sections)
+    function createPanelAccordions() {
+      try {
+        const panels = document.querySelectorAll('.panel-section');
+        panels.forEach((panel) => {
+          const hdr = panel.querySelector('header');
+          if (!hdr) return;
+          hdr.style.cursor = 'pointer';
+          // add chevron
+          let chev = hdr.querySelector('.accordion-chevron');
+          if (!chev) {
+            chev = document.createElement('span');
+            chev.className = 'accordion-chevron';
+            chev.textContent = '▾';
+            chev.style.marginLeft = '8px';
+            chev.style.opacity = '0.7';
+            hdr.appendChild(chev);
+          }
+          // start expanded by default; collapse when clicked
+          hdr.addEventListener('click', (ev) => {
+            // ignore clicks on info buttons
+            if (ev.target && ev.target.classList && ev.target.classList.contains('info-button')) return;
+            panel.classList.toggle('collapsed');
+            const collapsed = panel.classList.contains('collapsed');
+            chev.textContent = collapsed ? '▸' : '▾';
+            const contentChildren = Array.from(panel.children).filter((c) => c !== hdr);
+            contentChildren.forEach((el) => { el.style.display = collapsed ? 'none' : ''; });
+          });
+        });
+      } catch (e) { console.warn('Could not initialize panel accordions', e); }
     }
 
     async function buildEarth() {
@@ -4339,38 +4302,6 @@
       }
     }
 
-    // Turn panel headers into accordions (collapsible sections)
-    function createPanelAccordions() {
-      try {
-        const panels = document.querySelectorAll('.panel-section');
-        panels.forEach((panel) => {
-          const hdr = panel.querySelector('header');
-          if (!hdr) return;
-          hdr.style.cursor = 'pointer';
-          // add chevron
-          let chev = hdr.querySelector('.accordion-chevron');
-          if (!chev) {
-            chev = document.createElement('span');
-            chev.className = 'accordion-chevron';
-            chev.textContent = '▾';
-            chev.style.marginLeft = '8px';
-            chev.style.opacity = '0.7';
-            hdr.appendChild(chev);
-          }
-          // start expanded by default; collapse when clicked
-          hdr.addEventListener('click', (ev) => {
-            // ignore clicks on info buttons
-            if (ev.target && ev.target.classList && ev.target.classList.contains('info-button')) return;
-            panel.classList.toggle('collapsed');
-            const collapsed = panel.classList.contains('collapsed');
-            chev.textContent = collapsed ? '▸' : '▾';
-            const contentChildren = Array.from(panel.children).filter((c) => c !== hdr);
-            contentChildren.forEach((el) => { el.style.display = collapsed ? 'none' : ''; });
-          });
-        });
-      } catch (e) { console.warn('Could not initialize panel accordions', e); }
-    }
-
     function updateStationPickHint(lat = null, lon = null, awaiting = false) {
       const hintEl = elements.stationPickHint;
       if (!hintEl) return;
@@ -5382,8 +5313,42 @@
       const sidebar = document.getElementById('sidebar');
       if (sidebarToggle && sidebar) {
         sidebarToggle.addEventListener('click', () => {
-          sidebar.classList.toggle('collapsed');
+          // Toggle sidebar collapsed state
+          const collapsedNow = sidebar.classList.toggle('collapsed');
+          // If sidebar is collapsed, also collapse the control panel to free space.
+          // If sidebar is expanded, restore the control panel to its previous state.
+          try {
+            if (collapsedNow) {
+              setPanelCollapsed(true);
+            } else {
+              // only expand control panel if it was not intentionally collapsed
+              setPanelCollapsed(false);
+            }
+          } catch (e) {
+            console.debug('setPanelCollapsed not available at sidebar toggle time', e);
+          }
         });
+      }
+
+      // Robust synchronization: observe the sidebar for class changes and
+      // ensure the control panel collapses/expands when the sidebar does.
+      try {
+        const sidebarObserver = new MutationObserver((mutationsList) => {
+          for (const m of mutationsList) {
+            if (m.type === 'attributes' && m.attributeName === 'class') {
+              const isCollapsed = sidebar.classList.contains('collapsed');
+              try {
+                setPanelCollapsed(Boolean(isCollapsed));
+              } catch (err) {
+                // If setPanelCollapsed isn't bound yet, skip silently.
+              }
+            }
+          }
+        });
+        sidebarObserver.observe(sidebar, { attributes: true, attributeFilter: ['class'] });
+      } catch (obsErr) {
+        // Not critical — continue without observer
+        console.debug('Sidebar MutationObserver not created', obsErr);
       }
 
 
@@ -5409,6 +5374,24 @@
         const collapsed = elements.controlPanel?.dataset.collapsed === 'true';
         setPanelCollapsed(!collapsed);
       });
+
+      // Defensive delegation: if the direct button fails to receive events
+      // (due to overlays or DOM timing), listen on the controlPanel and
+      // respond to clicks on the toggle button via event delegation.
+      try {
+        elements.controlPanel?.addEventListener('click', (ev) => {
+          const btn = ev.target && ev.target.closest ? ev.target.closest('.panel-toggle-btn') : null;
+          if (btn) {
+            // emulate the same behaviour
+            const collapsed = elements.controlPanel?.dataset.collapsed === 'true';
+            setPanelCollapsed(!collapsed);
+            ev.stopPropagation();
+            ev.preventDefault();
+          }
+        });
+      } catch (delegErr) {
+        // non-fatal
+      }
 
       elements.panelReveal?.addEventListener('click', () => setPanelCollapsed(false));
 
@@ -6069,6 +6052,108 @@
           showModalGraph(target.dataset.graphId);
         }
       });
+
+      // Robust panel-toggle wiring: ensure the toggle works even if parts of
+      // the UI overlay it or if child elements swallow the events. Attach
+      // capture-phase handlers, keyboard support, and a document-level
+      // fallback.
+      // Robust toggle helper: try the app's setPanelCollapsed if available,
+      // otherwise directly mutate DOM attributes so the UI responds.
+      function robustTogglePanel(forceValue) {
+        try {
+          if (typeof setPanelCollapsed === 'function') {
+            // prefer the app's implementation
+            // compute desired next state (respect forceValue when provided)
+            try {
+              const panelEl = elements.controlPanel || document.getElementById('controlPanel');
+              const currently = panelEl?.dataset?.collapsed === 'true';
+              const next = typeof forceValue === 'boolean' ? Boolean(forceValue) : !currently;
+              return setPanelCollapsed(Boolean(next));
+            } catch (callErr) {
+              // if any error when reading DOM, fall back to calling without args
+              return setPanelCollapsed();
+            }
+          }
+        } catch (err) {
+          // fall through to manual DOM toggle
+          console.debug('setPanelCollapsed call failed, falling back to DOM toggle', err);
+        }
+
+        try {
+          const panel = elements.controlPanel || document.getElementById('controlPanel');
+          const workspace = document.querySelector('.workspace') || document.body;
+          if (!panel) return;
+          const currently = panel.dataset?.collapsed === 'true';
+          const next = typeof forceValue === 'boolean' ? forceValue : !currently;
+          console.log('robustTogglePanel: before', { currently, forceValue });
+          // update dataset / aria
+          panel.dataset.collapsed = next ? 'true' : 'false';
+          panel.setAttribute('aria-expanded', next ? 'false' : 'true');
+          // ensure workspace class mirrors state
+          if (next) workspace.classList.add('panel-collapsed'); else workspace.classList.remove('panel-collapsed');
+          // DIRECT STYLE fallback: hide the panel element if collapsed to guarantee effect
+          try {
+            panel.style.display = next ? 'none' : '';
+          } catch (e) { console.warn('Could not set panel.style.display', e); }
+          // quick visual flash to help debugging
+          try {
+            panel.style.outline = '3px solid rgba(124,58,237,0.9)';
+            setTimeout(() => { panel.style.outline = ''; }, 450);
+          } catch (e) {}
+          console.log('robustTogglePanel: after', { next, collapsed: panel.dataset?.collapsed });
+          // show/hide panel reveal affordance if present
+          const reveal = elements.panelReveal || document.getElementById('panelReveal');
+          if (reveal) reveal.hidden = !next;
+          // if a map exists, invalidate size to avoid layout glitches
+          try { if (typeof invalidateMap === 'function') invalidateMap(); } catch (e) {}
+        } catch (err) {
+          console.warn('robustTogglePanel failed', err);
+        }
+      }
+
+      // expose for manual debugging in the console
+      try { window.robustTogglePanel = robustTogglePanel; } catch (e) {}
+
+      if (elements.btnPanelToggle) {
+        try {
+          elements.btnPanelToggle.style.pointerEvents = elements.btnPanelToggle.style.pointerEvents || 'auto';
+
+          elements.btnPanelToggle.addEventListener('click', (evt) => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            robustTogglePanel();
+          }, { capture: true });
+
+          elements.btnPanelToggle.addEventListener('keydown', (evt) => {
+            if (evt.key === 'Enter' || evt.key === ' ') {
+              evt.preventDefault();
+              evt.stopPropagation();
+              elements.btnPanelToggle.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            }
+          }, { capture: true });
+
+          elements.btnPanelToggle.addEventListener('pointerdown', (evt) => {
+            evt.stopPropagation();
+          }, { capture: true });
+        } catch (err) {
+          console.warn('panel toggle listener setup failed', err);
+        }
+      }
+
+      // Document-level capture fallback to ensure clicks are handled even
+      // if something intercepts the event earlier in the tree.
+      document.addEventListener('click', (evt) => {
+        try {
+          const btn = evt.target && evt.target.closest && evt.target.closest('#btnPanelToggle');
+          if (btn) {
+            evt.preventDefault();
+            evt.stopPropagation();
+            robustTogglePanel();
+          }
+        } catch (err) {
+          // swallow errors
+        }
+      }, { capture: true });
 
       elements.closeGraphModal?.addEventListener('click', () => {
         elements.graphModal?.close();
@@ -7115,8 +7200,16 @@
       cacheElements();
       initDefaults();
       initInfoButtons();
-      // create collapsible panels for each section
-      createPanelAccordions();
+      // create collapsible panels for each section (guarded)
+      try {
+        if (typeof createPanelAccordions === 'function') {
+          createPanelAccordions();
+        } else {
+          console.warn('createPanelAccordions not available');
+        }
+      } catch (e) {
+        console.warn('Error while initializing accordions', e);
+      }
       bindEvents();
       hasMapBeenFramed = false;
       hasSceneBeenFramed = false;
@@ -7124,6 +7217,8 @@
       mapInstance = initMap(elements.mapContainer);
       setBaseLayer(currentMapStyle);
       await initScene(elements.threeContainer);
+      // mark 3D as ready for debug queries
+      try { window.__scene3dReady = true; } catch (e) {}
       // restore saved optimization points from localStorage
       try {
         const raw = localStorage.getItem('qkd:optimizationPoints');
@@ -7167,6 +7262,26 @@
       if (mapInstance) {
         setTimeout(() => invalidateMap(), 400);
       }
+      // Expose a lightweight status helper for debugging map/3D issues
+      try {
+        window.__appStatus = function () {
+          const threeCanvas = elements.threeContainer?.querySelector('#threeCanvas');
+          let webglAvailable = false;
+          try {
+            if (threeCanvas) {
+              webglAvailable = !!(threeCanvas.getContext && (threeCanvas.getContext('webgl2') || threeCanvas.getContext('webgl')));
+            }
+          } catch (e) { webglAvailable = false; }
+          return {
+            mapLoaded: !!mapInstance,
+            mapContainerPresent: !!elements.mapContainer,
+            currentMapStyle,
+            scene3dReady: Boolean(window.__scene3dReady),
+            webglAvailable,
+            panelCollapsed: elements.controlPanel?.dataset?.collapsed,
+          };
+        };
+      } catch (e) {}
     }
 
     initialize();
