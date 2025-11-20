@@ -2538,7 +2538,7 @@
         map = L.map(container, {
           zoomSnap: 0.25,
           zoomDelta: 0.5,
-          minZoom: 0,
+          minZoom: 2,
           maxZoom: 12,
           worldCopyJump: false,
           maxBounds: [
@@ -2551,10 +2551,12 @@
           standard: L.tileLayer(TILE_STANDARD, {
             attribution: '© OpenStreetMap contributors',
             noWrap: true,
+            bounds: [[-85, -180], [85, 180]],
           }),
           satellite: L.tileLayer(TILE_SATELLITE, {
             attribution: 'Imagery © Esri & the GIS User Community',
             noWrap: true,
+            bounds: [[-85, -180], [85, 180]],
           }),
         };
 
@@ -3234,20 +3236,26 @@
     }
 
     function buildRenderer() {
-      renderer = new THREE.WebGLRenderer({
-        canvas: canvasEl,
-        antialias: true,
-        alpha: true,
-      });
-      renderer.outputColorSpace = THREE.SRGBColorSpace;
-      renderer.setPixelRatio(window.devicePixelRatio || 1);
-      resizeRenderer();
-      canvasEl.addEventListener('webglcontextlost', (event) => {
-        event.preventDefault();
-        cancelAnimation();
-        showFallback('The WebGL context was lost. Reload to try again.');
-        isReady = false;
-      });
+      try {
+        renderer = new THREE.WebGLRenderer({
+          canvas: canvasEl,
+          antialias: true,
+          alpha: true,
+          failIfMajorPerformanceCaveat: false,
+        });
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.setPixelRatio(window.devicePixelRatio || 1);
+        resizeRenderer();
+        canvasEl.addEventListener('webglcontextlost', (event) => {
+          event.preventDefault();
+          cancelAnimation();
+          showFallback('The WebGL context was lost. Reload to try again.');
+          isReady = false;
+        });
+      } catch (error) {
+        console.error('Failed to create WebGL renderer:', error);
+        throw new Error('WebGL not supported or unavailable. Please check your browser settings and graphics drivers.');
+      }
     }
 
     function buildCamera() {
@@ -3286,38 +3294,6 @@
       // soft hemisphere for subtle sky/ground tint
       const hemi = new THREE.HemisphereLight(0x87bfff, 0x0b1020, 0.18);
       scene.add(ambient, sunLight, rim, hemi);
-    }
-
-    // Turn panel headers into accordions (collapsible sections)
-    function createPanelAccordions() {
-      try {
-        const panels = document.querySelectorAll('.panel-section');
-        panels.forEach((panel) => {
-          const hdr = panel.querySelector('header');
-          if (!hdr) return;
-          hdr.style.cursor = 'pointer';
-          // add chevron
-          let chev = hdr.querySelector('.accordion-chevron');
-          if (!chev) {
-            chev = document.createElement('span');
-            chev.className = 'accordion-chevron';
-            chev.textContent = '▾';
-            chev.style.marginLeft = '8px';
-            chev.style.opacity = '0.7';
-            hdr.appendChild(chev);
-          }
-          // start expanded by default; collapse when clicked
-          hdr.addEventListener('click', (ev) => {
-            // ignore clicks on info buttons
-            if (ev.target && ev.target.classList && ev.target.classList.contains('info-button')) return;
-            panel.classList.toggle('collapsed');
-            const collapsed = panel.classList.contains('collapsed');
-            chev.textContent = collapsed ? '▸' : '▾';
-            const contentChildren = Array.from(panel.children).filter((c) => c !== hdr);
-            contentChildren.forEach((el) => { el.style.display = collapsed ? 'none' : ''; });
-          });
-        });
-      } catch (e) { console.warn('Could not initialize panel accordions', e); }
     }
 
     async function buildEarth() {
@@ -4361,6 +4337,38 @@
           }
         });
       }
+    }
+
+    // Turn panel headers into accordions (collapsible sections)
+    function createPanelAccordions() {
+      try {
+        const panels = document.querySelectorAll('.panel-section');
+        panels.forEach((panel) => {
+          const hdr = panel.querySelector('header');
+          if (!hdr) return;
+          hdr.style.cursor = 'pointer';
+          // add chevron
+          let chev = hdr.querySelector('.accordion-chevron');
+          if (!chev) {
+            chev = document.createElement('span');
+            chev.className = 'accordion-chevron';
+            chev.textContent = '▾';
+            chev.style.marginLeft = '8px';
+            chev.style.opacity = '0.7';
+            hdr.appendChild(chev);
+          }
+          // start expanded by default; collapse when clicked
+          hdr.addEventListener('click', (ev) => {
+            // ignore clicks on info buttons
+            if (ev.target && ev.target.classList && ev.target.classList.contains('info-button')) return;
+            panel.classList.toggle('collapsed');
+            const collapsed = panel.classList.contains('collapsed');
+            chev.textContent = collapsed ? '▸' : '▾';
+            const contentChildren = Array.from(panel.children).filter((c) => c !== hdr);
+            contentChildren.forEach((el) => { el.style.display = collapsed ? 'none' : ''; });
+          });
+        });
+      } catch (e) { console.warn('Could not initialize panel accordions', e); }
     }
 
     function updateStationPickHint(lat = null, lon = null, awaiting = false) {
@@ -7107,16 +7115,8 @@
       cacheElements();
       initDefaults();
       initInfoButtons();
-      // create collapsible panels for each section (guarded)
-      try {
-        if (typeof createPanelAccordions === 'function') {
-          createPanelAccordions();
-        } else {
-          console.warn('createPanelAccordions not available');
-        }
-      } catch (e) {
-        console.warn('Error while initializing accordions', e);
-      }
+      // create collapsible panels for each section
+      createPanelAccordions();
       bindEvents();
       hasMapBeenFramed = false;
       hasSceneBeenFramed = false;
